@@ -1,0 +1,83 @@
+# Ставки РФ, которые использует ядро Rentab.
+#
+# Все значения перенесены из Rentab v0.3
+# (legacy/rentab_v03/modules/jurisdiction.py, словарь TAX_RATES_RF_2026)
+# без проверки по первоисточникам, поэтому у каждой ставки needs_review: true
+# и source_url: null. effective_from — год, который заявлял v0.3.
+# Проверка по НК РФ и обновление реестра — фаза 3 (docs/ROADMAP.md, L-08).
+#
+# value — доля, а не процент: 0.06 = 6%.
+country: RF
+rates:
+  usn.income:
+    value: 0.06
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "УСН «Доходы». v0.3: jurisdiction.py:32"
+  usn.income_minus_expenses:
+    value: 0.15
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "УСН «Доходы минус расходы». Минимального налога 1% в v0.3 нет. v0.3: jurisdiction.py:33"
+  usn.vat_5:
+    value: 0.05
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Пониженная ставка НДС для УСН. v0.3: jurisdiction.py:38"
+  usn.vat_7:
+    value: 0.07
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Пониженная ставка НДС для УСН. v0.3: jurisdiction.py:39"
+  osno.profit:
+    value: 0.25
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Налог на прибыль на ОСНО. v0.3: jurisdiction.py:43"
+  osno.vat:
+    value: 0.22
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Основная ставка НДС на ОСНО. v0.3: jurisdiction.py:44"
+  npd.individual:
+    value: 0.04
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "НПД с доходов от физлиц. v0.3: jurisdiction.py:48"
+  npd.legal_entity:
+    value: 0.06
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "НПД с доходов от юрлиц и ИП. v0.3: jurisdiction.py:49"
+  ausn.income:
+    value: 0.08
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "АУСН с доходов. v0.3: jurisdiction.py:71"
+  ausn.social_contributions:
+    value: 0.0
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Страховые взносы работодателя на АУСН. v0.3: jurisdiction.py:73"
+  social_contributions.standard:
+    value: 0.30
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Страховые взносы работодателя, плоский тариф без предельной базы. v0.3: jurisdiction.py:53"
+  social_contributions.zero:
+    value: 0.0
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Нулевой тариф взносов (в v0.3 — «для плательщиков АУСН»). v0.3: jurisdiction.py:54"

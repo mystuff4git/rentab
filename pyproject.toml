@@ -153,4 +153,6 @@ show_missing = true
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+    # Ветка `case _: assert_never(...)` исчерпывающего match недостижима по типам.
+    "assert_never\\(",
 ]
