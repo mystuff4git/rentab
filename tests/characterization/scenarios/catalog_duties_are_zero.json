@@ -1,0 +1,58 @@
+{
+  "id": "catalog_duties_are_zero",
+  "description": "Выбраны пошлины из каталога Роспатента, но в каталоге v0.3 все суммы равны 0, и страница их пропускает.",
+  "known_bugs": [
+    "L-09"
+  ],
+  "pricing_model": "billing",
+  "jurisdiction_params": {
+    "jurisdiction": "RF",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": null,
+    "exchange_rate_rub_per_kzt": null
+  },
+  "billable_hours_per_month": 160.0,
+  "team": [
+    {
+      "name": "Петрова",
+      "role": "Старший юрист",
+      "billing_rate": 10000.0,
+      "cost_rate": 5500.0
+    }
+  ],
+  "stages": [
+    {
+      "name": "Подготовка и подача заявки",
+      "executor": "Петрова",
+      "hours": 4.0
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда + ПО",
+      "category": "overhead",
+      "amount": 80000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "selected_duties": {
+    "RF": [
+      "Подача заявки на товарный знак (1 класс МКТУ)",
+      "Экспертиза заявки на товарный знак по существу (1 класс МКТУ)"
+    ]
+  },
+  "custom_expenses": [],
+  "project": {
+    "name": "Подача заявки на ТЗ",
+    "client": "",
+    "description": ""
+  }
+}

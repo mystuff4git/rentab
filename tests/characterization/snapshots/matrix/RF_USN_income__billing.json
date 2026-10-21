@@ -1,0 +1,133 @@
+{
+  "dashboard": {
+    "effective_tax_rate_pct": 4.528662,
+    "nne_margin_pct": 31.157173,
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "billing_rate": 6000.0,
+        "executor": "Сидоров К. (Младший юрист)",
+        "hours": 6.0,
+        "margin_pct": 41.666667,
+        "revenue": 36000.0,
+        "stage_name": "Поиск по базам и анализ охраноспособности"
+      },
+      {
+        "billing_rate": 10000.0,
+        "executor": "Петрова М. (Старший юрист)",
+        "hours": 4.0,
+        "margin_pct": 45.0,
+        "revenue": 40000.0,
+        "stage_name": "Подготовка и подача заявки"
+      },
+      {
+        "billing_rate": 15000.0,
+        "executor": "Иванов А. (Партнёр)",
+        "hours": 2.0,
+        "margin_pct": 46.666667,
+        "revenue": 30000.0,
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 2500.0,
+        "executor": "Кузнецова Е. (Стажёр)",
+        "hours": 5.0,
+        "margin_pct": 64.0,
+        "revenue": 12500.0,
+        "stage_name": "Сопровождение регистрации"
+      }
+    ],
+    "stage_totals": {
+      "hours": 17.0,
+      "margin_pct": 46.413502,
+      "revenue": 118500.0
+    }
+  },
+  "results": {
+    "blended_rate": 6970.588235,
+    "calc_country": "RF",
+    "client": "ООО «Ромашка»",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "Классы МКТУ 05, 30",
+    "direct_labor": 63500.0,
+    "disbursements": 38500.0,
+    "disbursements_own": 3000.0,
+    "gross_revenue": 118500.0,
+    "income_tax": 7110.0,
+    "jurisdiction_mode": "RF",
+    "leverage": 1.833333,
+    "nne": 36921.25,
+    "overhead_rate": 468.75,
+    "overheads_alloc": 7968.75,
+    "pricing_model": "billing",
+    "project_expenses": [
+      {
+        "amount": 38500.0,
+        "billable": true,
+        "category": "disbursement_billable",
+        "currency": "RUB",
+        "name": "Пошлины Роспатента: ТЗ, 2 класса МКТУ",
+        "period": "one-time"
+      },
+      {
+        "amount": 3000.0,
+        "billable": false,
+        "category": "disbursement_own",
+        "currency": "RUB",
+        "name": "Курьерская доставка оригиналов",
+        "period": "one-time"
+      },
+      {
+        "amount": 7000.0,
+        "billable": false,
+        "category": "project_extra",
+        "currency": "RUB",
+        "name": "Нотариальный перевод доверенности",
+        "period": "one-time"
+      }
+    ],
+    "project_name": "Регистрация товарного знака «Ромашка»",
+    "regime_label": "УСН income (6%)",
+    "tax": 7110.0,
+    "taxable_base": 118500.0,
+    "team_with_hours": [
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 3500.0,
+        "hours": 6.0,
+        "name": "Сидоров К.",
+        "role": "Младший юрист",
+        "stage_name": "Поиск по базам и анализ охраноспособности"
+      },
+      {
+        "billing_rate": 10000.0,
+        "cost_rate": 5500.0,
+        "hours": 4.0,
+        "name": "Петрова М.",
+        "role": "Старший юрист",
+        "stage_name": "Подготовка и подача заявки"
+      },
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 8000.0,
+        "hours": 2.0,
+        "name": "Иванов А.",
+        "role": "Партнёр",
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 2500.0,
+        "cost_rate": 900.0,
+        "hours": 5.0,
+        "name": "Кузнецова Е.",
+        "role": "Стажёр",
+        "stage_name": "Сопровождение регистрации"
+      }
+    ],
+    "total_client": 157000.0,
+    "total_hours": 17.0,
+    "vat": 0.0
+  },
+  "warnings": []
+}

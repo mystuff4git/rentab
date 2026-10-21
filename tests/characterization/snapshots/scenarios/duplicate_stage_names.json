@@ -1,0 +1,115 @@
+{
+  "dashboard": {
+    "actual_margin_pct": 30.0,
+    "price_structure": {
+      "direct_labor": 67500.0,
+      "indirect": 7500.0,
+      "profit": 35156.25,
+      "tax": 7031.25
+    },
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "flag": "green",
+        "hours": 12.0,
+        "stage_costs": 40000.0,
+        "stage_margin_pct": 48.8,
+        "stage_name": "Ответ на уведомление экспертизы",
+        "stage_revenue_share": 78125.0
+      },
+      {
+        "flag": "red",
+        "hours": 12.0,
+        "stage_costs": 17000.0,
+        "stage_margin_pct": -8.8,
+        "stage_name": "Ответ на уведомление экспертизы",
+        "stage_revenue_share": 15625.0
+      },
+      {
+        "flag": "yellow",
+        "hours": 3.0,
+        "stage_costs": 18000.0,
+        "stage_margin_pct": 23.2,
+        "stage_name": "Подача заявки",
+        "stage_revenue_share": 23437.5
+      }
+    ],
+    "target_margin_pct": 30.0
+  },
+  "results": {
+    "actual_margin": 0.3,
+    "blended_rate": 8000.0,
+    "calc_country": "RF",
+    "client": "",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "",
+    "direct_labor": 67500.0,
+    "disbursements": 0,
+    "disbursements_own": 0.0,
+    "fixed_price": 117187.5,
+    "jurisdiction_mode": "RF",
+    "leverage": 2.0,
+    "nne": 35156.25,
+    "overhead_rate": 500.0,
+    "overheads_alloc": 7500.0,
+    "pricing_model": "fixed",
+    "project_expenses": [],
+    "project_name": "Ответ на уведомление экспертизы",
+    "regime_label": "УСН income (6%)",
+    "stage_flags": [
+      {
+        "flag": "green",
+        "stage_costs": 40000.0,
+        "stage_margin": 0.488,
+        "stage_name": "Ответ на уведомление экспертизы",
+        "stage_revenue_share": 78125.0
+      },
+      {
+        "flag": "red",
+        "stage_costs": 17000.0,
+        "stage_margin": -0.088,
+        "stage_name": "Ответ на уведомление экспертизы",
+        "stage_revenue_share": 15625.0
+      },
+      {
+        "flag": "yellow",
+        "stage_costs": 18000.0,
+        "stage_margin": 0.232,
+        "stage_name": "Подача заявки",
+        "stage_revenue_share": 23437.5
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 7031.25,
+    "team_with_hours": [
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 3500.0,
+        "hours": 10.0,
+        "name": "Сидоров",
+        "role": "Младший юрист",
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 8000.0,
+        "hours": 2.0,
+        "name": "Иванов",
+        "role": "Партнёр",
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 10000.0,
+        "cost_rate": 5500.0,
+        "hours": 3.0,
+        "name": "Петрова",
+        "role": "Старший юрист",
+        "stage_name": "Подача заявки"
+      }
+    ],
+    "total_costs": 75000.0,
+    "total_hours": 15.0
+  },
+  "warnings": []
+}

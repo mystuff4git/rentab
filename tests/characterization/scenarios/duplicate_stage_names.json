@@ -1,0 +1,77 @@
+{
+  "id": "duplicate_stage_names",
+  "description": "Чтобы посадить на этап двух исполнителей, в v0.3 приходится заводить два этапа с одинаковым названием. Светофор видит их как два этапа, а дашборд суммирует часы по названию.",
+  "known_bugs": [
+    "L-04",
+    "L-05"
+  ],
+  "pricing_model": "fixed",
+  "target_margin_pct": 30,
+  "jurisdiction_params": {
+    "jurisdiction": "RF",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": null,
+    "exchange_rate_rub_per_kzt": null
+  },
+  "billable_hours_per_month": 160.0,
+  "team": [
+    {
+      "name": "Иванов",
+      "role": "Партнёр",
+      "billing_rate": 15000.0,
+      "cost_rate": 8000.0
+    },
+    {
+      "name": "Петрова",
+      "role": "Старший юрист",
+      "billing_rate": 10000.0,
+      "cost_rate": 5500.0
+    },
+    {
+      "name": "Сидоров",
+      "role": "Младший юрист",
+      "billing_rate": 6000.0,
+      "cost_rate": 3500.0
+    }
+  ],
+  "stages": [
+    {
+      "name": "Ответ на уведомление экспертизы",
+      "executor": "Сидоров",
+      "hours": 10.0
+    },
+    {
+      "name": "Ответ на уведомление экспертизы",
+      "executor": "Иванов",
+      "hours": 2.0
+    },
+    {
+      "name": "Подача заявки",
+      "executor": "Петрова",
+      "hours": 3.0
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда + ПО",
+      "category": "overhead",
+      "amount": 80000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "selected_duties": {},
+  "custom_expenses": [],
+  "project": {
+    "name": "Ответ на уведомление экспертизы",
+    "client": "",
+    "description": ""
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "dashboard": {
+    "effective_tax_rate_pct": 2.510092,
+    "nne_margin_pct": 18.561404,
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "billing_rate": 6000.0,
+        "executor": "Сидоров К. (Младший юрист)",
+        "hours": 8.0,
+        "margin_pct": 41.666667,
+        "revenue": 48000.0,
+        "stage_name": "Регистрация ТЗ в РФ"
+      },
+      {
+        "billing_rate": 6000.0,
+        "executor": "Сидоров К. (Младший юрист)",
+        "hours": 6.0,
+        "margin_pct": 41.666667,
+        "revenue": 36000.0,
+        "stage_name": "Регистрация ТЗ в РК"
+      },
+      {
+        "billing_rate": 15000.0,
+        "executor": "Иванов А. (Партнёр)",
+        "hours": 2.0,
+        "margin_pct": 46.666667,
+        "revenue": 30000.0,
+        "stage_name": "Контроль качества"
+      }
+    ],
+    "stage_totals": {
+      "hours": 16.0,
+      "margin_pct": 42.982456,
+      "revenue": 114000.0
+    }
+  },
+  "results": {
+    "blended_rate": 7125.0,
+    "calc_country": "RF",
+    "client": "ООО «Евразия»",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "",
+    "direct_labor": 65000.0,
+    "disbursements": 158500.0,
+    "disbursements_own": 0,
+    "gross_revenue": 114000.0,
+    "income_tax": 6840.0,
+    "jurisdiction_mode": "Both",
+    "leverage": 7.0,
+    "nne": 21160.0,
+    "overhead_rate": 1312.5,
+    "overheads_alloc": 21000.0,
+    "pricing_model": "billing",
+    "project_expenses": [
+      {
+        "amount": 38500.0,
+        "billable": true,
+        "category": "disbursement_billable",
+        "currency": "RUB",
+        "name": "Пошлины Роспатента: ТЗ, 2 класса МКТУ",
+        "period": "one-time"
+      },
+      {
+        "amount": 120000.0,
+        "billable": true,
+        "category": "disbursement_billable",
+        "currency": "KZT",
+        "name": "Пошлины Казпатента: ТЗ, 1 класс МКТУ",
+        "period": "one-time"
+      }
+    ],
+    "project_name": "Регистрация ТЗ в РФ и РК",
+    "regime_label": "УСН income (6%)",
+    "tax": 6840.0,
+    "taxable_base": 114000.0,
+    "team_with_hours": [
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 3500.0,
+        "hours": 8.0,
+        "name": "Сидоров К.",
+        "role": "Младший юрист",
+        "stage_name": "Регистрация ТЗ в РФ"
+      },
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 3500.0,
+        "hours": 6.0,
+        "name": "Сидоров К.",
+        "role": "Младший юрист",
+        "stage_name": "Регистрация ТЗ в РК"
+      },
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 8000.0,
+        "hours": 2.0,
+        "name": "Иванов А.",
+        "role": "Партнёр",
+        "stage_name": "Контроль качества"
+      }
+    ],
+    "total_client": 272500.0,
+    "total_hours": 16.0,
+    "vat": 0.0
+  },
+  "warnings": []
+}

@@ -1,0 +1,442 @@
+{
+  "id": "matrix",
+  "description": "Матрица «налоговый режим × модель ценообразования» на типовом проекте регистрации ТЗ. Параметры режимов собраны так же, как их собирает страница «Настройка» v0.3. Проект содержит пошлины, собственные расходы и расход «Прочее».",
+  "known_bugs": [
+    "L-02",
+    "L-03",
+    "L-04",
+    "L-12"
+  ],
+  "base_projects": {
+    "RF": {
+      "billable_hours_per_month": 320.0,
+      "team": [
+        {
+          "name": "Иванов А.",
+          "role": "Партнёр",
+          "billing_rate": 15000.0,
+          "cost_rate": 8000.0
+        },
+        {
+          "name": "Петрова М.",
+          "role": "Старший юрист",
+          "billing_rate": 10000.0,
+          "cost_rate": 5500.0
+        },
+        {
+          "name": "Сидоров К.",
+          "role": "Младший юрист",
+          "billing_rate": 6000.0,
+          "cost_rate": 3500.0
+        },
+        {
+          "name": "Кузнецова Е.",
+          "role": "Стажёр",
+          "billing_rate": 2500.0,
+          "cost_rate": 900.0
+        }
+      ],
+      "stages": [
+        {
+          "name": "Поиск по базам и анализ охраноспособности",
+          "executor": "Сидоров К.",
+          "hours": 6.0
+        },
+        {
+          "name": "Подготовка и подача заявки",
+          "executor": "Петрова М.",
+          "hours": 4.0
+        },
+        {
+          "name": "Ответ на уведомление экспертизы",
+          "executor": "Иванов А.",
+          "hours": 2.0
+        },
+        {
+          "name": "Сопровождение регистрации",
+          "executor": "Кузнецова Е.",
+          "hours": 5.0
+        }
+      ],
+      "firm_expenses": [
+        {
+          "name": "Аренда офиса",
+          "category": "overhead",
+          "amount": 120000.0,
+          "currency": "RUB",
+          "period": "monthly",
+          "billable": false
+        },
+        {
+          "name": "КонсультантПлюс",
+          "category": "overhead",
+          "amount": 180000.0,
+          "currency": "RUB",
+          "period": "annual",
+          "billable": false
+        },
+        {
+          "name": "Облачные сервисы",
+          "category": "overhead",
+          "amount": 15000.0,
+          "currency": "RUB",
+          "period": "monthly",
+          "billable": false
+        },
+        {
+          "name": "Ремонт переговорной",
+          "category": "overhead",
+          "amount": 50000.0,
+          "currency": "RUB",
+          "period": "one-time",
+          "billable": false
+        }
+      ],
+      "selected_duties": {},
+      "custom_expenses": [
+        {
+          "name": "Пошлины Роспатента: ТЗ, 2 класса МКТУ",
+          "category": "disbursement_billable",
+          "amount": 38500.0,
+          "currency": "RUB",
+          "period": "one-time",
+          "billable": true
+        },
+        {
+          "name": "Курьерская доставка оригиналов",
+          "category": "disbursement_own",
+          "amount": 3000.0,
+          "currency": "RUB",
+          "period": "one-time",
+          "billable": false
+        },
+        {
+          "name": "Нотариальный перевод доверенности",
+          "category": "project_extra",
+          "amount": 7000.0,
+          "currency": "RUB",
+          "period": "one-time",
+          "billable": false
+        }
+      ],
+      "project": {
+        "name": "Регистрация товарного знака «Ромашка»",
+        "client": "ООО «Ромашка»",
+        "description": "Классы МКТУ 05, 30"
+      }
+    },
+    "KZ": {
+      "billable_hours_per_month": 320.0,
+      "team": [
+        {
+          "name": "Ахметов Д.",
+          "role": "Партнёр",
+          "billing_rate": 90000.0,
+          "cost_rate": 48000.0
+        },
+        {
+          "name": "Сапарова А.",
+          "role": "Старший юрист",
+          "billing_rate": 60000.0,
+          "cost_rate": 33000.0
+        },
+        {
+          "name": "Ким В.",
+          "role": "Младший юрист",
+          "billing_rate": 36000.0,
+          "cost_rate": 21000.0
+        },
+        {
+          "name": "Нурланова Ж.",
+          "role": "Стажёр",
+          "billing_rate": 15000.0,
+          "cost_rate": 5400.0
+        }
+      ],
+      "stages": [
+        {
+          "name": "Поиск по базам и анализ охраноспособности",
+          "executor": "Ким В.",
+          "hours": 6.0
+        },
+        {
+          "name": "Подготовка и подача заявки",
+          "executor": "Сапарова А.",
+          "hours": 4.0
+        },
+        {
+          "name": "Ответ на уведомление экспертизы",
+          "executor": "Ахметов Д.",
+          "hours": 2.0
+        },
+        {
+          "name": "Сопровождение регистрации",
+          "executor": "Нурланова Ж.",
+          "hours": 5.0
+        }
+      ],
+      "firm_expenses": [
+        {
+          "name": "Аренда офиса",
+          "category": "overhead",
+          "amount": 720000.0,
+          "currency": "KZT",
+          "period": "monthly",
+          "billable": false
+        },
+        {
+          "name": "Параграф (правовая база)",
+          "category": "overhead",
+          "amount": 1080000.0,
+          "currency": "KZT",
+          "period": "annual",
+          "billable": false
+        },
+        {
+          "name": "Облачные сервисы",
+          "category": "overhead",
+          "amount": 90000.0,
+          "currency": "KZT",
+          "period": "monthly",
+          "billable": false
+        },
+        {
+          "name": "Ремонт переговорной",
+          "category": "overhead",
+          "amount": 300000.0,
+          "currency": "KZT",
+          "period": "one-time",
+          "billable": false
+        }
+      ],
+      "selected_duties": {},
+      "custom_expenses": [
+        {
+          "name": "Пошлины Казпатента: ТЗ, 1 класс МКТУ",
+          "category": "disbursement_billable",
+          "amount": 150000.0,
+          "currency": "KZT",
+          "period": "one-time",
+          "billable": true
+        },
+        {
+          "name": "Курьерская доставка оригиналов",
+          "category": "disbursement_own",
+          "amount": 18000.0,
+          "currency": "KZT",
+          "period": "one-time",
+          "billable": false
+        },
+        {
+          "name": "Нотариальный перевод доверенности",
+          "category": "project_extra",
+          "amount": 42000.0,
+          "currency": "KZT",
+          "period": "one-time",
+          "billable": false
+        }
+      ],
+      "project": {
+        "name": "Регистрация товарного знака «Жусан»",
+        "client": "ТОО «Жусан»",
+        "description": "Классы МКТУ 05, 30"
+      }
+    }
+  },
+  "tax_configs": [
+    {
+      "id": "RF_USN_income",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "USN",
+          "object": "income",
+          "vat": "none",
+          "social_contributions": "standard"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_USN_income_vat5",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "USN",
+          "object": "income",
+          "vat": "5%",
+          "social_contributions": "standard"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_USN_income_vat7",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "USN",
+          "object": "income",
+          "vat": "7%",
+          "social_contributions": "standard"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_USN_income_expenses",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "USN",
+          "object": "income_minus_expenses",
+          "vat": "none",
+          "social_contributions": "standard"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_USN_income_expenses_vat5",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "USN",
+          "object": "income_minus_expenses",
+          "vat": "5%",
+          "social_contributions": "standard"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_AUSN",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "AUSN",
+          "social_contributions": "zero"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_OSNO",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "OSNO",
+          "social_contributions": "standard"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_NPD_legal",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "NPD",
+          "client_type": "legal_entity"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "RF_NPD_individual",
+      "jurisdiction_params": {
+        "jurisdiction": "RF",
+        "rf": {
+          "country": "RF",
+          "regime": "NPD",
+          "client_type": "individual"
+        },
+        "kz": null,
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "KZ_OUR_too",
+      "jurisdiction_params": {
+        "jurisdiction": "KZ",
+        "rf": null,
+        "kz": {
+          "country": "KZ",
+          "regime": "OUR",
+          "form": "too",
+          "vat": "none"
+        },
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "KZ_OUR_too_vat16",
+      "jurisdiction_params": {
+        "jurisdiction": "KZ",
+        "rf": null,
+        "kz": {
+          "country": "KZ",
+          "regime": "OUR",
+          "form": "too",
+          "vat": "16%"
+        },
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "KZ_OUR_ip",
+      "jurisdiction_params": {
+        "jurisdiction": "KZ",
+        "rf": null,
+        "kz": {
+          "country": "KZ",
+          "regime": "OUR",
+          "form": "ip",
+          "vat": "none"
+        },
+        "exchange_rate_rub_per_kzt": null
+      }
+    },
+    {
+      "id": "KZ_OUR_ip_vat16",
+      "jurisdiction_params": {
+        "jurisdiction": "KZ",
+        "rf": null,
+        "kz": {
+          "country": "KZ",
+          "regime": "OUR",
+          "form": "ip",
+          "vat": "16%"
+        },
+        "exchange_rate_rub_per_kzt": null
+      }
+    }
+  ],
+  "pricing": [
+    {
+      "id": "billing",
+      "pricing_model": "billing"
+    },
+    {
+      "id": "fixed",
+      "pricing_model": "fixed",
+      "target_margin_pct": 30
+    }
+  ]
+}

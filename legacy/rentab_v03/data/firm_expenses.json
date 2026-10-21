@@ -1,0 +1,82 @@
+[
+  {
+    "name": "Аренда офиса",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Связь и интернет",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Мобильная связь",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "1С: Бухгалтерия / CRM",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "КонсультантПлюс",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Notion / облачные сервисы",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Зарплата ассистента (ФОТ + взносы)",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Бухгалтер на аутсорсе",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Канцтовары и расходники",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  },
+  {
+    "name": "Прочие накладные",
+    "category": "overhead",
+    "amount": 0,
+    "currency": "RUB",
+    "period": "monthly",
+    "billable": false
+  }
+]

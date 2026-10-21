@@ -1,0 +1,62 @@
+{
+  "id": "legacy_billing_basic",
+  "description": "Сценарий 1 из legacy/rentab_v03/test_scenario.py: биллинговая модель, УСН «Доходы» 6%.",
+  "known_bugs": [],
+  "pricing_model": "billing",
+  "jurisdiction_params": {
+    "jurisdiction": "RF",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": null,
+    "exchange_rate_rub_per_kzt": null
+  },
+  "billable_hours_per_month": 160.0,
+  "team": [
+    {
+      "name": "Иванов",
+      "role": "Партнёр",
+      "billing_rate": 15000.0,
+      "cost_rate": 8000.0
+    },
+    {
+      "name": "Петрова",
+      "role": "Младший юрист",
+      "billing_rate": 6000.0,
+      "cost_rate": 3500.0
+    }
+  ],
+  "stages": [
+    {
+      "name": "Анализ и стратегия",
+      "executor": "Иванов",
+      "hours": 5.0
+    },
+    {
+      "name": "Подготовка документов",
+      "executor": "Петрова",
+      "hours": 15.0
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда + ПО",
+      "category": "overhead",
+      "amount": 80000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "selected_duties": {},
+  "custom_expenses": [],
+  "project": {
+    "name": "Контрольный сценарий v0.3 — биллинг",
+    "client": "",
+    "description": ""
+  }
+}

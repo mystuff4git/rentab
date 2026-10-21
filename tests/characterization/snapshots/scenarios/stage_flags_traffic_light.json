@@ -1,0 +1,138 @@
+{
+  "dashboard": {
+    "actual_margin_pct": 30.0,
+    "price_structure": {
+      "direct_labor": 204500.0,
+      "indirect": 37500.0,
+      "profit": 113437.5,
+      "tax": 22687.5
+    },
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "flag": "red",
+        "hours": 10.0,
+        "stage_costs": 85000.0,
+        "stage_margin_pct": -68.595041,
+        "stage_name": "Стратегия защиты",
+        "stage_revenue_share": 50416.666667
+      },
+      {
+        "flag": "yellow",
+        "hours": 15.0,
+        "stage_costs": 60000.0,
+        "stage_margin_pct": 20.661157,
+        "stage_name": "Подготовка возражения",
+        "stage_revenue_share": 75625.0
+      },
+      {
+        "flag": "green",
+        "hours": 30.0,
+        "stage_costs": 75000.0,
+        "stage_margin_pct": 50.413223,
+        "stage_name": "Сбор доказательств",
+        "stage_revenue_share": 151250.0
+      },
+      {
+        "flag": "green",
+        "hours": 20.0,
+        "stage_costs": 22000.0,
+        "stage_margin_pct": 78.181818,
+        "stage_name": "Оформление приложений",
+        "stage_revenue_share": 100833.333333
+      }
+    ],
+    "target_margin_pct": 30.0
+  },
+  "results": {
+    "actual_margin": 0.3,
+    "blended_rate": 7066.666667,
+    "calc_country": "RF",
+    "client": "ООО «Пример»",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "",
+    "direct_labor": 204500.0,
+    "disbursements": 0,
+    "disbursements_own": 0.0,
+    "fixed_price": 378125.0,
+    "jurisdiction_mode": "RF",
+    "leverage": 2.0,
+    "nne": 113437.5,
+    "overhead_rate": 500.0,
+    "overheads_alloc": 37500.0,
+    "pricing_model": "fixed",
+    "project_expenses": [],
+    "project_name": "Возражение против отказа в регистрации",
+    "regime_label": "УСН income (6%)",
+    "stage_flags": [
+      {
+        "flag": "red",
+        "stage_costs": 85000.0,
+        "stage_margin": -0.68595,
+        "stage_name": "Стратегия защиты",
+        "stage_revenue_share": 50416.666667
+      },
+      {
+        "flag": "yellow",
+        "stage_costs": 60000.0,
+        "stage_margin": 0.206612,
+        "stage_name": "Подготовка возражения",
+        "stage_revenue_share": 75625.0
+      },
+      {
+        "flag": "green",
+        "stage_costs": 75000.0,
+        "stage_margin": 0.504132,
+        "stage_name": "Сбор доказательств",
+        "stage_revenue_share": 151250.0
+      },
+      {
+        "flag": "green",
+        "stage_costs": 22000.0,
+        "stage_margin": 0.781818,
+        "stage_name": "Оформление приложений",
+        "stage_revenue_share": 100833.333333
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 22687.5,
+    "team_with_hours": [
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 8000.0,
+        "hours": 10.0,
+        "name": "Иванов",
+        "role": "Партнёр",
+        "stage_name": "Стратегия защиты"
+      },
+      {
+        "billing_rate": 10000.0,
+        "cost_rate": 3500.0,
+        "hours": 15.0,
+        "name": "Петрова",
+        "role": "Старший юрист",
+        "stage_name": "Подготовка возражения"
+      },
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 2000.0,
+        "hours": 30.0,
+        "name": "Сидоров",
+        "role": "Младший юрист",
+        "stage_name": "Сбор доказательств"
+      },
+      {
+        "billing_rate": 2500.0,
+        "cost_rate": 600.0,
+        "hours": 20.0,
+        "name": "Кузнецова",
+        "role": "Стажёр",
+        "stage_name": "Оформление приложений"
+      }
+    ],
+    "total_costs": 242000.0,
+    "total_hours": 75.0
+  },
+  "warnings": []
+}
