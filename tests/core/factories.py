@@ -124,6 +124,6 @@ def basic_scenario(
     )
 
 
-def fixed(price: str | int | None = None) -> FixedPricing:
+def fixed(price: Decimal | str | int | None = None) -> FixedPricing:
     """Фиксированная цена: «издержки + маржа» или согласованная."""
     return FixedPricing(price=None if price is None else d(price))

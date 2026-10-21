@@ -18,7 +18,7 @@ from rentab_core.models import (
     Jurisdiction,
     OsnoProfile,
     PricingModel,
-    TaxProfile,
+    RfTaxProfile,
     UsnObject,
     UsnProfile,
 )
@@ -181,7 +181,7 @@ PRICINGS: list[PricingModel] = [
     fixed(),
     fixed(90_000),
 ]
-PROFILES: list[TaxProfile] = [UsnProfile(), USN_15, OsnoProfile()]
+PROFILES: list[RfTaxProfile] = [UsnProfile(), USN_15, OsnoProfile()]
 
 
 @given(
@@ -192,7 +192,7 @@ PROFILES: list[TaxProfile] = [UsnProfile(), USN_15, OsnoProfile()]
     profile=st.sampled_from(PROFILES),
 )
 def test_stage_totals_add_up_to_project(
-    hours: list[int], own: int, bind_own: bool, pricing: PricingModel, profile: TaxProfile
+    hours: list[int], own: int, bind_own: bool, pricing: PricingModel, profile: RfTaxProfile
 ) -> None:
     # Σ R_s = R, Σ C_s = C, Σ Tax_s = Tax для любой модели и режима.
     a, b, c, e = hours
