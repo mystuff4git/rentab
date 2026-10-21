@@ -39,6 +39,7 @@ app = [
 dev = [
     "hypothesis>=6.100",
     "mypy>=1.13",
+    "pandas-stubs>=2.2",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.8",
@@ -71,7 +72,7 @@ packages = ["src/rentab_core"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "app"]
 # legacy/ — неизменяемый эталон v0.3, его не линтуем и не форматируем.
 extend-exclude = ["legacy"]
 
@@ -106,17 +107,28 @@ known-first-party = ["rentab_core"]
 "plotly".msg = "rentab_core не зависит от UI: plotly разрешён только в app/"
 
 [tool.ruff.lint.per-file-ignores]
-"app/**" = ["TID251"]
+# Имена страниц Streamlit задают навигацию («01_Настройка.py») и не обязаны
+# быть идентификаторами Python.
+"app/**" = ["TID251", "N999"]
+# Smoke-тесты интерфейса запускают страницы через streamlit.testing.
+"tests/app/**" = ["TID251"]
 
 # ---------------------------------------------------------------------------
 # mypy
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"
-files = ["src", "tests"]
+files = ["src", "tests", "app"]
+# Страницы app/ импортируют общие модули как `ui.*` (Streamlit кладёт app/ в sys.path).
+mypy_path = "app"
 exclude = ["^legacy/"]
 strict = true
 warn_unreachable = true
+
+# plotly не поставляет аннотаций типов.
+[[tool.mypy.overrides]]
+module = ["plotly", "plotly.*"]
+ignore_missing_imports = true
 
 # Модули v0.3 подгружаются тестами из legacy/ динамически и не типизированы.
 [[tool.mypy.overrides]]
