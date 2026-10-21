@@ -4,11 +4,13 @@
 читаются `CLAUDE.md` и этот файл, в конце фазы файл обновляется: что сделано,
 что отложено, какие есть ограничения.
 
-ID вида `L-NN` — проблемы v0.3 из [`legacy_audit.md`](legacy_audit.md).
+Полная постановка (цели, целевая методология, архитектура, промпты фаз) —
+[`spec_v1.md`](spec_v1.md). ID вида `L-NN` — проблемы v0.3 из
+[`legacy_audit.md`](legacy_audit.md).
 
 | Фаза | Тема | Статус |
 |---|---|---|
-| 0 | Bootstrap: репозиторий, тулинг, CI, legacy, characterization-тесты | ✅ готово (PR `phase-0-bootstrap`) |
+| 0 | Bootstrap: репозиторий, тулинг, CI, legacy, characterization-тесты | ✅ готово (PR #1, #2) |
 | 1 | Ядро: модели, Decimal, перенос расчётов без изменения поведения | ⏳ |
 | 2 | Методология: исправления и `docs/methodology.md` | ⏳ |
 | 3 | Ставки 2026 и пошлины по первоисточникам, применимость режимов, курсы | ⏳ |
@@ -25,6 +27,7 @@ ID вида `L-NN` — проблемы v0.3 из [`legacy_audit.md`](legacy_aud
 - [x] ruff (в том числе запрет streamlit и plotly в ядре), mypy strict, pytest и hypothesis, coverage ядра ≥ 90%.
 - [x] CI: GitHub Actions, ruff + mypy + pytest на Python 3.11 и 3.13.
 - [x] LICENSE (MIT), `.gitignore`, `CLAUDE.md`, этот ROADMAP, README, CHANGELOG, ADR 0001–0002.
+- [x] Исходное ТЗ и промпты фаз — [`spec_v1.md`](spec_v1.md).
 - [x] v0.3 перенесён в `legacy/rentab_v03/` (побайтовая копия `b769b5a`).
 - [x] Аудит v0.3: [`legacy_audit.md`](legacy_audit.md), 11 известных проблем подтверждены, найдено 8 новых (L-12…L-19).
 - [x] Characterization-тесты:
