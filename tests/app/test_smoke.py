@@ -149,7 +149,7 @@ def test_setup_page_shows_capacity_and_overhead_rate() -> None:
     values = metrics(app)
     assert values["Биллируемая ёмкость"] == "160.0 ч/мес"
     assert values["Ставка накладных, ₽/ч"] == "500.0"
-    assert values["Утилизация фирмы"] == "50%"
+    assert values["Утилизация фирмы"] == "50.0%"
 
 
 def test_setup_page_clears_form_after_adding_employee() -> None:
@@ -195,11 +195,9 @@ def test_project_page_calculates_like_core(
 def test_project_page_adds_second_assignee_to_stage() -> None:
     # L-05: «партнёр проверяет 2 ч» — второй исполнитель на том же этапе.
     app = run_page("pages/02_Проект.py", project_session())
-    form = app.get("form")[0]
-    assert form is not None
-    app.selectbox[0].set_value("Подготовка документов")
-    app.selectbox[1].set_value("Иванов")
-    app.number_input[0].set_value(2.0)
+    app.selectbox(key="assignment_stage").set_value("Подготовка документов")
+    app.selectbox(key="assignment_executor").set_value("Иванов")
+    app.number_input(key="assignment_hours").set_value(2.0)
     click(app, "➕ Добавить")
     stages = app.session_state[state.PROJECT_STAGES]
     assert [s.name for s in stages] == ["Анализ", "Подготовка документов"]
@@ -207,6 +205,17 @@ def test_project_page_adds_second_assignee_to_stage() -> None:
         ("Петрова", Decimal(15)),
         ("Иванов", Decimal(2)),
     ]
+
+
+def test_project_page_new_stage_is_selectable_at_once() -> None:
+    app = run_page("pages/02_Проект.py", project_session())
+    app.text_input(key="assignment_new_stage").input("Ответ на уведомление")
+    app.number_input(key="assignment_hours").set_value(3.0)
+    click(app, "➕ Добавить")
+    assert app.success[0].value == "Добавлен этап: Ответ на уведомление"
+    assert "Ответ на уведомление" in app.selectbox(key="assignment_stage").options
+    click(app, "➕ Добавить")
+    assert app.error[0].value == "Часы должны быть больше нуля."
 
 
 def test_project_page_vat_on_top() -> None:

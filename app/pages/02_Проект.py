@@ -113,36 +113,58 @@ team_names = [member.name for member in team]
 stages = state.stages()
 stage_names = [stage.name for stage in stages]
 
+
+def add_assignment() -> None:
+    """Колбэк формы: новый этап или ещё один исполнитель на существующем этапе.
+
+    Колбэк срабатывает до отрисовки страницы, поэтому новый этап сразу
+    появляется в списке «Этап».
+    """
+    choice = st.session_state["assignment_stage"]
+    name = str(st.session_state["assignment_new_stage"]).strip()
+    hours = float(st.session_state["assignment_hours"])
+    executor = str(st.session_state["assignment_executor"])
+    current = state.stages()
+    names = [stage.name for stage in current]
+    assignment = Assignment(employee=executor, hours=to_decimal(hours))
+    if hours <= 0:
+        message = ("error", "Часы должны быть больше нуля.")
+    elif choice == NEW_STAGE and not name:
+        message = ("error", "Введите название нового этапа.")
+    elif choice == NEW_STAGE and name in names:
+        message = ("error", f"Этап «{name}» уже есть: выберите его в списке «Этап».")
+    elif choice == NEW_STAGE:
+        current.append(Stage(name=name, assignments=(assignment,)))
+        message = ("success", f"Добавлен этап: {name}")
+    else:
+        idx = names.index(str(choice))
+        stage = current[idx]
+        current[idx] = stage.model_copy(update={"assignments": (*stage.assignments, assignment)})
+        message = ("success", f"На этап «{stage.name}» добавлен исполнитель: {executor}")
+    st.session_state["assignment_message"] = message
+
+
 with st.form("add_assignment_form", clear_on_submit=True):
     col_stage, col_new, col_exec, col_hours = st.columns([1.5, 2, 1.5, 1])
     with col_stage:
-        stage_choice = st.selectbox("Этап", options=[NEW_STAGE, *stage_names])
+        st.selectbox("Этап", options=[NEW_STAGE, *stage_names], key="assignment_stage")
     with col_new:
-        new_stage_name = st.text_input(
+        st.text_input(
             "Название нового этапа",
             placeholder="Поиск по базам / Подача заявки / Ответ на уведомление",
+            key="assignment_new_stage",
         )
     with col_exec:
-        executor = st.selectbox("Исполнитель", options=team_names)
+        st.selectbox("Исполнитель", options=team_names, key="assignment_executor")
     with col_hours:
-        hours_input = st.number_input("Часы", min_value=0.0, value=0.0, step=1.0, format="%.1f")
-    if st.form_submit_button("➕ Добавить"):
-        assignment = Assignment(employee=str(executor), hours=to_decimal(hours_input))
-        name = new_stage_name.strip()
-        if hours_input <= 0:
-            st.error("Часы должны быть больше нуля.")
-        elif stage_choice == NEW_STAGE and not name:
-            st.error("Введите название нового этапа.")
-        elif stage_choice == NEW_STAGE and name in stage_names:
-            st.error(f"Этап «{name}» уже есть: выберите его в списке «Этап».")
-        elif stage_choice == NEW_STAGE:
-            stages.append(Stage(name=name, assignments=(assignment,)))
-            st.success(f"Добавлен этап: {name}")
-        else:
-            idx = stage_names.index(str(stage_choice))
-            stage = stages[idx]
-            stages[idx] = stage.model_copy(update={"assignments": (*stage.assignments, assignment)})
-            st.success(f"На этап «{stage.name}» добавлен исполнитель: {executor}")
+        st.number_input(
+            "Часы", min_value=0.0, value=0.0, step=1.0, format="%.1f", key="assignment_hours"
+        )
+    st.form_submit_button("➕ Добавить", on_click=add_assignment)
+assignment_message = st.session_state.pop("assignment_message", None)
+if assignment_message is not None:
+    kind_, text_ = assignment_message
+    (st.success if kind_ == "success" else st.error)(text_)
 
 team_by_name = {member.name: member for member in team}
 if not stages:
