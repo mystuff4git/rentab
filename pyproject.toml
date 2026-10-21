@@ -18,31 +18,43 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
     "Typing :: Typed",
 ]
-# Ядро пока без рантайм-зависимостей: pydantic появится в фазе 1.
-dependencies = []
+# Зависимости ядра: модели (pydantic), реестр ставок (pyyaml), смета XLSX (openpyxl).
+dependencies = [
+    "openpyxl>=3.1",
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+]
 
 [project.urls]
 Repository = "https://github.com/mystuff4git/rentab"
 "Demo (v0.3)" = "https://rentab.streamlit.app/"
 
 [dependency-groups]
+# Интерфейс на Streamlit (app/). Ядро эти пакеты не импортирует.
+app = [
+    "pandas>=2.0",
+    "plotly>=6.0",
+    "streamlit>=1.50",
+]
 dev = [
     "hypothesis>=6.100",
     "mypy>=1.13",
+    "pandas-stubs>=2.2",
     "pytest>=8.3",
     "pytest-cov>=6.0",
     "ruff>=0.8",
-]
-# Зависимости замороженного v0.3 (legacy/), нужные characterization-тестам.
-# Streamlit и plotly сюда не входят: тесты не импортируют страницы v0.3.
-legacy = [
-    "openpyxl>=3.1",
-    "pandas>=2.0",
     "types-openpyxl>=3.1",
+    "types-pyyaml>=6.0",
+]
+# Зависимости замороженного v0.3 (legacy/), нужные characterization-тестам
+# (openpyxl уже есть в зависимостях ядра). Streamlit и plotly сюда не входят:
+# тесты не импортируют страницы v0.3.
+legacy = [
+    "pandas>=2.0",
 ]
 
 [tool.uv]
-default-groups = ["dev", "legacy"]
+default-groups = ["dev", "legacy", "app"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -60,7 +72,7 @@ packages = ["src/rentab_core"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-src = ["src", "tests"]
+src = ["src", "tests", "app"]
 # legacy/ — неизменяемый эталон v0.3, его не линтуем и не форматируем.
 extend-exclude = ["legacy"]
 
@@ -95,17 +107,28 @@ known-first-party = ["rentab_core"]
 "plotly".msg = "rentab_core не зависит от UI: plotly разрешён только в app/"
 
 [tool.ruff.lint.per-file-ignores]
-"app/**" = ["TID251"]
+# Имена страниц Streamlit задают навигацию («01_Настройка.py») и не обязаны
+# быть идентификаторами Python.
+"app/**" = ["TID251", "N999"]
+# Smoke-тесты интерфейса запускают страницы через streamlit.testing.
+"tests/app/**" = ["TID251"]
 
 # ---------------------------------------------------------------------------
 # mypy
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.11"
-files = ["src", "tests"]
+files = ["src", "tests", "app"]
+# Страницы app/ импортируют общие модули как `ui.*` (Streamlit кладёт app/ в sys.path).
+mypy_path = "app"
 exclude = ["^legacy/"]
 strict = true
 warn_unreachable = true
+
+# plotly не поставляет аннотаций типов.
+[[tool.mypy.overrides]]
+module = ["plotly", "plotly.*"]
+ignore_missing_imports = true
 
 # Модули v0.3 подгружаются тестами из legacy/ динамически и не типизированы.
 [[tool.mypy.overrides]]
@@ -142,4 +165,6 @@ show_missing = true
 exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+    # Ветка `case _: assert_never(...)` исчерпывающего match недостижима по типам.
+    "assert_never\\(",
 ]

@@ -1,0 +1,10 @@
+# Настройки Streamlit для app/. Streamlit читает их из текущей директории
+# запуска, поэтому файл лежит в корне репозитория:
+#   uv run streamlit run app/Home.py
+# В отличие от v0.3, enableCORS = false не задаётся: Streamlit 1.66 считает
+# это небезопасным и предупреждает при запуске, а приложению это не нужно.
+[theme]
+base = "light"
+
+[server]
+headless = true

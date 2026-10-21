@@ -1,0 +1,48 @@
+# Ставки РК, которые использует ядро Rentab.
+#
+# Все значения перенесены из Rentab v0.3
+# (legacy/rentab_v03/modules/jurisdiction.py, словарь TAX_RATES_KZ_2026)
+# без проверки по первоисточникам, поэтому у каждой ставки needs_review: true
+# и source_url: null. effective_from — год, который заявлял v0.3.
+# С 2026 года в РК действует новый Налоговый кодекс; проверка и обновление
+# реестра — фаза 3 (docs/ROADMAP.md, L-08).
+#
+# value — доля, а не процент: 0.20 = 20%.
+country: KZ
+rates:
+  our.cit_too:
+    value: 0.20
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "КПН для ТОО на ОУР. v0.3: jurisdiction.py:84"
+  our.iit_ip:
+    value: 0.10
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "ИПН для ИП на ОУР с чистой прибыли. v0.3: jurisdiction.py:85"
+  vat_16:
+    value: 0.16
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "НДС. v0.3: jurisdiction.py:88"
+  payroll.employer.oosms:
+    value: 0.03
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Отчисления работодателя на ОСМС (ООСМС). v0.3: jurisdiction.py:98"
+  payroll.employer.so:
+    value: 0.05
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Социальные отчисления (СО). Социальный налог ТОО в v0.3 не учтён. v0.3: jurisdiction.py:99"
+  payroll.employer.opvr:
+    value: 0.035
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Обязательные пенсионные взносы работодателя (ОПВР). v0.3: jurisdiction.py:100"
