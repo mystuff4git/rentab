@@ -1,14 +1,14 @@
-"""Фиксированная цена «издержки + маржа» (перенос `FixedPriceCalculator` v0.3).
+"""Фиксированная цена (docs/methodology.md, разделы 7.3–7.4).
 
-Цена — решение уравнения P = C / (1 − m − t_eff(P)), где t_eff = налог / P.
-Как и v0.3, ядро ищет его итерациями неподвижной точки (KNOWN-BUG L-03 →
-фаза 2, там их заменят закрытые формулы). Итерации совпадают с закрытыми
-формулами с точностью до копейки (property-тесты ядра и v0.3):
+Цена «издержки + маржа» — наименьшая выручка без НДС P, при которой
+NNE = m* × P. Закрытые формулы (L-03; в v0.3 цена искалась итерациями):
 
-- база «доходы»: P = C / (1 − m − t − vat);
-- база «доходы − расходы»: P = C(1 − t) / (1 − t − vat − m).
+    база «доходы»:            P = C / (1 − m* − t)
+    база «доходы − расходы»:  P_A = C(1 − t) / (1 − t − m*)
+    минимальный налог:        P_B = C / (1 − t_min − m*)
+                              P = max(P_A, P_B)
 
-НДС здесь заложен в цену как налог фирмы (KNOWN-BUG L-02 → фаза 2).
+НДС в цену не закладывается: он начисляется сверху (L-02).
 """
 
 from __future__ import annotations
@@ -16,80 +16,61 @@ from __future__ import annotations
 from decimal import Decimal
 
 from rentab_core.errors import FixedPriceError
-from rentab_core.models import CoreModel, TaxProfile
-from rentab_core.money import ONE, ZERO
-from rentab_core.results import TaxResult
-from rentab_core.tax import calculate_tax
-
-# Предел числа итераций: для базы «доходы» хватает одной-двух, для базы
-# «доходы − расходы» — нескольких; запас как в v0.3.
-MAX_PRICE_ITERATIONS = 50
-# Точность сходимости цены, валюта проекта: одна копейка.
-PRICE_CONVERGENCE_EPS = Decimal("0.01")
+from rentab_core.models import VatMode
+from rentab_core.money import ONE, PERCENT, ZERO
+from rentab_core.pricing import net_of_vat
+from rentab_core.results import TaxBase, TaxTerms
 
 
-class FixedPriceQuote(CoreModel):
-    """Фиксированная цена и показатели при ней."""
-
-    fixed_price: Decimal
-    tax: TaxResult
-    nne: Decimal
-    actual_margin: Decimal
-
-
-def _tax_at(profile: TaxProfile, price: Decimal, total_costs: Decimal) -> TaxResult:
-    """Налог при цене price: пошлины в фикс-цену не входят, их база нулевая."""
-    return calculate_tax(profile, price, expenses=total_costs, disbursements_billed=ZERO)
+def _unreachable(terms: TaxTerms, target_margin: Decimal, rate: Decimal) -> FixedPriceError:
+    total = (target_margin + rate) * PERCENT
+    return FixedPriceError(
+        f"Целевая маржа {target_margin * PERCENT:.1f}% недостижима при режиме "
+        f"«{terms.regime_label}»: маржа + ставка налога = {total:.1f}% ≥ 100%."
+    )
 
 
-def solve_fixed_price(profile: TaxProfile, total_costs: Decimal, target_margin: Decimal) -> Decimal:
-    """Ищет фиксированную цену итерациями (v0.3: `_solve_fixed_price`).
+def price_without_min_tax(terms: TaxTerms, costs: Decimal, target_margin: Decimal) -> Decimal:
+    """Цена «издержки + маржа» без учёта минимального налога.
 
-    Args:
-        profile: Налоговый режим.
-        total_costs: Все издержки проекта: трудозатраты + накладные + собственные расходы.
-        target_margin: Целевая маржа после налога, доля в [0; 1).
-
-    Returns:
-        Цена, при которой маржа после налога равна целевой (с точностью
-        сходимости), или последнее приближение после MAX_PRICE_ITERATIONS.
+    «доходы»: C / (1 − m* − t); «доходы − расходы»: C(1 − t) / (1 − t − m*).
 
     Raises:
-        FixedPriceError: Маржа вне [0; 1) или маржа + эффективная ставка
-            налога ≥ 1 — проект не может быть прибыльным при такой цели.
+        FixedPriceError: 1 − m* − t ≤ 0.
+    """
+    denominator = ONE - target_margin - terms.rate
+    if denominator <= 0:
+        raise _unreachable(terms, target_margin, terms.rate)
+    if terms.base == TaxBase.INCOME:
+        return costs / denominator
+    return costs * (ONE - terms.rate) / denominator
+
+
+def cost_plus_price(terms: TaxTerms, costs: Decimal, target_margin: Decimal) -> Decimal:
+    """Цена «издержки + маржа» без НДС.
+
+    Args:
+        terms: Параметры налогового режима.
+        costs: Издержки проекта C = Labor + OH + Own.
+        target_margin: Целевая маржа NNE m*, доля в [0; 1).
+
+    Returns:
+        Наименьшая P, при которой NNE = m* × P; при C = 0 — 0.
+
+    Raises:
+        FixedPriceError: Цель недостижима: 1 − m* − t ≤ 0 или 1 − m* − t_min ≤ 0.
     """
     if not ZERO <= target_margin < ONE:
-        raise FixedPriceError(f"target_margin должна быть в [0; 1), получено {target_margin}")
-
-    # Стартовое приближение — цена при нулевом налоге.
-    price = total_costs / (ONE - target_margin)
-    for _ in range(MAX_PRICE_ITERATIONS):
-        tax_amount = _tax_at(profile, price, total_costs).total_tax
-        effective_tax_rate = tax_amount / price if price > 0 else ZERO
-        denominator = ONE - target_margin - effective_tax_rate
+        raise FixedPriceError(f"Целевая маржа должна быть в [0; 1), получено {target_margin}")
+    price = price_without_min_tax(terms, costs, target_margin)
+    if terms.min_rate > 0:
+        denominator = ONE - terms.min_rate - target_margin
         if denominator <= 0:
-            raise FixedPriceError(
-                "Сумма target_margin + effective_tax_rate "
-                f"= {target_margin + effective_tax_rate:.4f} ≥ 1: "
-                "проект не может быть прибыльным при такой цели."
-            )
-        new_price = total_costs / denominator
-        if abs(new_price - price) < PRICE_CONVERGENCE_EPS:
-            return new_price
-        price = new_price
+            raise _unreachable(terms, target_margin, terms.min_rate)
+        price = max(price, costs / denominator)
     return price
 
 
-def quote_fixed_price(
-    profile: TaxProfile, total_costs: Decimal, target_margin: Decimal
-) -> FixedPriceQuote:
-    """Фиксированная цена, налог при ней, NNE и фактическая маржа.
-
-    Raises:
-        FixedPriceError: См. `solve_fixed_price`.
-    """
-    price = solve_fixed_price(profile, total_costs, target_margin)
-    tax = _tax_at(profile, price, total_costs)
-    nne = price - total_costs - tax.total_tax
-    actual_margin = nne / price if price > 0 else ZERO
-    return FixedPriceQuote(fixed_price=price, tax=tax, nne=nne, actual_margin=actual_margin)
+def agreed_revenue(price: Decimal, vat_mode: VatMode, vat_rate: Decimal) -> Decimal:
+    """Выручка без НДС при согласованной фиксированной цене."""
+    return net_of_vat(price, vat_mode, vat_rate)

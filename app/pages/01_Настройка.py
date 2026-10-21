@@ -1,9 +1,9 @@
-"""Страница 01: настройка фирмы (перенос `pages/01_Настройка.py` v0.3 на ядро).
+"""Страница 01: настройка фирмы (страница v0.3 на ядре, методология фазы 2).
 
-Три вкладки: юрисдикция и налоги, команда, накладные фирмы. Ставки в
-подписях берутся из реестра ядра, себестоимость часа считает калькулятор
-ФОТ ядра. Сохранения профиля на диск, как в v0.3, нет: данные живут только
-в сессии (L-10).
+Три вкладки: юрисдикция, налоги и курсы; команда; накладные фирмы. Ставки в
+подписях берутся из реестра ядра. Себестоимость часа не вводится, а
+считается ядром: c = W / (H × u) (docs/methodology.md, раздел 3). Сохранения
+профиля на диск, как в v0.3, нет: данные живут только в сессии (L-10).
 """
 
 from __future__ import annotations
@@ -13,38 +13,46 @@ import streamlit as st
 from pydantic import ValidationError
 
 from rentab_core.costing import (
-    employee_full_cost,
+    EmployeeCost,
+    billable_capacity,
+    employee_cost,
     overhead_rate,
     total_overheads_monthly,
 )
+from rentab_core.errors import CurrencyConversionError
 from rentab_core.models import (
     DEFAULT_CONTRACT_HOURS_PER_MONTH,
+    DEFAULT_TARGET_UTILIZATION,
     ROLE_LABELS,
     AusnProfile,
+    Compensation,
     Country,
     Employee,
+    Firm,
     Jurisdiction,
     JurisdictionMode,
     KzForm,
     KzOurProfile,
     KzVat,
+    MonthlyCost,
     NpdClientType,
     NpdProfile,
     OsnoProfile,
     Overhead,
-    Payroll,
     Period,
     RfTaxProfile,
     Role,
+    Salary,
     SocialContributions,
     UsnObject,
     UsnProfile,
     UsnVat,
 )
-from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, Currency, to_decimal
+from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, ZERO, Currency, decimal_sum, to_decimal
 from rentab_core.tax import employer_contribution_rate
 from ui import state
 from ui.labels import (
+    COMPENSATION_LABELS,
     JURISDICTION_LABELS,
     RF_REGIME_LABELS,
     kz_form_label,
@@ -55,8 +63,9 @@ from ui.labels import (
     vat_label,
 )
 
-# Допустимое расхождение введённого вручную cost_rate с расчётом по ФОТ.
-COST_RATE_FOT_TOLERANCE = 0.20
+# Страна трудоустройства по валюте оклада — для ставки взносов по умолчанию.
+COUNTRY_BY_CURRENCY = {Currency.RUB: Country.RF, Currency.KZT: Country.KZ}
+DEFAULT_UTILIZATION_PCT = float(DEFAULT_TARGET_UTILIZATION * PERCENT)
 
 # Типовые статьи накладных («Загрузить типовой шаблон», data/firm_expenses.json v0.3).
 OVERHEAD_TEMPLATE: tuple[str, ...] = (
@@ -88,7 +97,9 @@ st.info(
     icon="🔒",
 )
 
-tab_jur, tab_team, tab_exp = st.tabs(["🏛️ Юрисдикция и налоги", "👥 Команда", "🧾 Расходы фирмы"])
+tab_jur, tab_team, tab_exp = st.tabs(
+    ["🏛️ Юрисдикция, налоги, курсы", "👥 Команда", "🧾 Расходы фирмы"]
+)
 
 # ===========================================================================
 # ВКЛАДКА 1 — ЮРИСДИКЦИЯ И НАЛОГИ
@@ -211,26 +222,34 @@ with tab_jur:
             )
         kz_profile = KzOurProfile(form=kz_form, vat=kz_vat)
 
-    exchange_rate: float | None = None
-    if mode == JurisdictionMode.BOTH:
-        st.markdown("### 💱 Обменный курс")
-        exchange_rate = st.number_input(
-            "RUB за 1 KZT (например, 0.18 → 1 ₸ ≈ 0.18 ₽)",
-            min_value=0.0001,
-            value=float(st.session_state[state.EXCHANGE_RATE]),
+    jurisdiction = Jurisdiction(mode=mode, rf=rf_profile, kz=kz_profile)
+    st.session_state[state.JURISDICTION] = jurisdiction
+
+    st.markdown("### 💱 Курсы валют")
+    st.caption(
+        "Суммы в другой валюте (оклады, накладные, пошлины) пересчитываются в валюту "
+        "проекта по этим курсам. Курс тенге по умолчанию — индикативный из v0.3: "
+        "введите актуальный. 0 — курс не задан."
+    )
+    col_kzt, col_usd = st.columns(2)
+    with col_kzt:
+        st.number_input(
+            "₽ за 1 ₸",
+            min_value=0.0,
             step=0.01,
             format="%.4f",
-            key="exchange_rate_input",
+            key=state.RUB_PER_KZT,
+            help="Например, 0.18 — «1 ₸ ≈ 0,18 ₽».",
         )
-        st.session_state[state.EXCHANGE_RATE] = exchange_rate
-
-    jurisdiction = Jurisdiction(
-        mode=mode,
-        rf=rf_profile,
-        kz=kz_profile,
-        exchange_rate_rub_per_kzt=None if exchange_rate is None else to_decimal(exchange_rate),
-    )
-    st.session_state[state.JURISDICTION] = jurisdiction
+    with col_usd:
+        st.number_input(
+            "₽ за 1 $",
+            min_value=0.0,
+            step=1.0,
+            format="%.2f",
+            key=state.RUB_PER_USD,
+            help="Нужен, если есть накладные или расходы в долларах.",
+        )
 
     with st.expander("Текущие настройки", expanded=False):
         st.json(jurisdiction.model_dump(mode="json"))
@@ -242,43 +261,69 @@ with tab_jur:
 with tab_team:
     st.subheader("Состав команды")
     st.caption(
-        "Для каждого сотрудника задайте оклад и контрактные часы — "
-        "калькулятор ФОТ автоматически предложит cost_rate (полная стоимость "
-        "часа с учётом взносов работодателя). При желании cost_rate можно "
-        "ввести вручную."
+        "Для каждого сотрудника задайте полную стоимость в месяц (оклад + взносы или, "
+        "для партнёра, нормативное вознаграждение), контрактные часы и целевую "
+        "утилизацию. Себестоимость биллируемого часа = стоимость в месяц / "
+        "(контрактные часы × утилизация): небиллируемое время тоже оплачивается "
+        "и возмещается через проданные часы."
     )
+    jurisdiction_now = state.jurisdiction()
+    home = state.home_currency(jurisdiction_now)
+
+    def contribution_pct(currency: Currency) -> float:
+        """Ставка взносов по умолчанию для страны трудоустройства, %."""
+        country = COUNTRY_BY_CURRENCY.get(currency, Country.RF)
+        return float(employer_contribution_rate(jurisdiction_now, country) * PERCENT)
+
     # Поля карточки «Добавить сотрудника». Значения задаются до виджетов, чтобы
     # колбэки могли очищать карточку (менять ключ виджета после его создания нельзя).
     member_defaults: dict[str, object] = {
         "add_member_name": "",
         "add_member_billing": 0.0,
+        "add_member_currency": home.value,
+        "add_member_compensation": "salary",
         "add_member_gross_salary": 0.0,
+        "add_member_employer_rate_pct": contribution_pct(home),
+        "add_member_monthly_cost": 0.0,
         "add_member_contract_hours": float(DEFAULT_CONTRACT_HOURS_PER_MONTH),
-        "add_member_employer_rate_pct": float(
-            employer_contribution_rate(state.jurisdiction()) * PERCENT
-        ),
-        "add_member_cost_rate": 0.0,
+        "add_member_utilization_pct": DEFAULT_UTILIZATION_PCT,
     }
     for key, default in member_defaults.items():
         st.session_state.setdefault(key, default)
 
-    def form_payroll() -> Payroll:
-        """Параметры ФОТ из карточки сотрудника."""
-        return Payroll(
+    def form_compensation() -> Compensation:
+        """Полная стоимость сотрудника из карточки."""
+        if st.session_state["add_member_compensation"] == "monthly":
+            return MonthlyCost(
+                amount=to_decimal(float(st.session_state["add_member_monthly_cost"]))
+            )
+        return Salary(
             gross_salary=to_decimal(float(st.session_state["add_member_gross_salary"])),
-            contract_hours_per_month=to_decimal(
-                float(st.session_state["add_member_contract_hours"])
-            ),
             employer_contribution_rate=(
                 to_decimal(float(st.session_state["add_member_employer_rate_pct"])) / PERCENT
             ),
         )
 
-    def use_fot_cost_rate() -> None:
-        """Колбэк: переносит стоимость часа из калькулятора ФОТ в cost_rate."""
-        st.session_state["add_member_cost_rate"] = float(
-            st.session_state["fot_calc_result"].cost_rate_per_hour
+    def form_employee() -> Employee:
+        """Сотрудник из карточки (без проверки имени)."""
+        return Employee(
+            name=str(st.session_state["add_member_name"]).strip(),
+            role=st.session_state["add_member_role"],
+            compensation=form_compensation(),
+            currency=Currency(st.session_state["add_member_currency"]),
+            billing_rate=to_decimal(float(st.session_state["add_member_billing"])),
+            contract_hours_per_month=to_decimal(
+                float(st.session_state["add_member_contract_hours"])
+            ),
+            target_utilization=(
+                to_decimal(float(st.session_state["add_member_utilization_pct"])) / PERCENT
+            ),
         )
+
+    def reset_contribution_rate() -> None:
+        """Колбэк смены валюты: ставка взносов страны трудоустройства."""
+        currency = Currency(st.session_state["add_member_currency"])
+        st.session_state["add_member_employer_rate_pct"] = contribution_pct(currency)
 
     def add_member() -> None:
         """Колбэк: добавляет сотрудника и очищает карточку."""
@@ -286,20 +331,20 @@ with tab_team:
         if not name:
             st.session_state["add_member_message"] = ("error", "Имя не может быть пустым.")
             return
-        state.team().append(
-            Employee(
-                name=name,
-                role=st.session_state["add_member_role"],
-                billing_rate=to_decimal(float(st.session_state["add_member_billing"])),
-                cost_rate=to_decimal(float(st.session_state["add_member_cost_rate"])),
-                payroll=form_payroll(),
-            )
-        )
+        try:
+            employee = form_employee()
+        except ValidationError as exc:
+            st.session_state["add_member_message"] = ("error", f"Проверьте поля: {exc}")
+            return
+        state.team().append(employee)
         st.session_state["add_member_message"] = ("success", f"Добавлен(а): {name}")
-        for key in ("add_member_name", "add_member_billing", "add_member_gross_salary"):
+        for key in (
+            "add_member_name",
+            "add_member_billing",
+            "add_member_gross_salary",
+            "add_member_monthly_cost",
+        ):
             st.session_state[key] = member_defaults[key]
-        st.session_state["add_member_cost_rate"] = member_defaults["add_member_cost_rate"]
-        st.session_state.pop("fot_calc_result", None)
 
     st.markdown("### Добавить сотрудника")
     col_name, col_role = st.columns([2, 1])
@@ -313,96 +358,107 @@ with tab_team:
             key="add_member_role",
         )
 
-    st.number_input(
-        "Ставка для клиента (₽ или ₸ / ч)",
-        min_value=0.0,
-        step=500.0,
-        format="%.0f",
-        key="add_member_billing",
-    )
+    col_bill, col_cur = st.columns([2, 1])
+    with col_bill:
+        st.number_input(
+            "Ставка для клиента за час",
+            min_value=0.0,
+            step=500.0,
+            format="%.0f",
+            key="add_member_billing",
+        )
+    with col_cur:
+        st.selectbox(
+            "Валюта оклада и ставки",
+            options=[Currency.RUB.value, Currency.KZT.value],
+            format_func=lambda c: f"{c} ({CURRENCY_SYMBOLS[Currency(c)]})",
+            key="add_member_currency",
+            on_change=reset_contribution_rate,
+            help="В режиме «Оба» — валюта страны, где работает сотрудник.",
+        )
 
     with st.container(border=True):
-        st.markdown("**🧮 Параметры ФОТ**")
-        st.caption(
-            "Калькулятор посчитает полную стоимость сотрудника "
-            "(оклад + взносы работодателя) и стоимость одного часа."
+        st.markdown("**🧮 Полная стоимость сотрудника в месяц**")
+        st.radio(
+            "Как задать",
+            options=list(COMPENSATION_LABELS),
+            format_func=lambda k: COMPENSATION_LABELS[k],
+            horizontal=True,
+            key="add_member_compensation",
+            help=(
+                "Нормативное вознаграждение партнёра (по Майстеру) — рыночная цена "
+                "его труда. Оно отделяет оплату труда партнёра от прибыли фирмы."
+            ),
         )
-        col_gs, col_ch, col_er = st.columns(3)
-        with col_gs:
+        if st.session_state["add_member_compensation"] == "monthly":
             st.number_input(
-                "Оклад (₽ или ₸ / мес)",
+                "Сумма в месяц",
                 min_value=0.0,
                 step=10_000.0,
                 format="%.0f",
-                key="add_member_gross_salary",
-                help="Оклад до вычетов (gross).",
+                key="add_member_monthly_cost",
             )
+        else:
+            col_gs, col_er = st.columns(2)
+            with col_gs:
+                st.number_input(
+                    "Оклад в месяц",
+                    min_value=0.0,
+                    step=10_000.0,
+                    format="%.0f",
+                    key="add_member_gross_salary",
+                    help="Оклад до вычетов (gross).",
+                )
+            with col_er:
+                st.number_input(
+                    "Взносы работодателя, %",
+                    min_value=0.0,
+                    max_value=100.0,
+                    step=0.5,
+                    format="%.1f",
+                    key="add_member_employer_rate_pct",
+                    help="Подставлено по стране трудоустройства; можно переопределить.",
+                )
+        col_ch, col_u = st.columns(2)
         with col_ch:
             st.number_input(
-                "Контрактные часы / мес",
+                "Контрактные часы в месяц",
                 min_value=1.0,
                 step=8.0,
                 format="%.0f",
                 key="add_member_contract_hours",
-                help="Сколько часов сотрудник работает по договору. Стандартная норма ≈ 168 ч/мес.",
+                help="Сколько часов сотрудник работает по договору. Норма ≈ 168 ч/мес.",
             )
-        with col_er:
+        with col_u:
             st.number_input(
-                "Взносы работодателя, %",
-                min_value=0.0,
+                "Целевая утилизация, %",
+                min_value=1.0,
                 max_value=100.0,
-                step=0.5,
-                format="%.1f",
-                key="add_member_employer_rate_pct",
-                help="Подставлено по выбранной юрисдикции; можно переопределить.",
+                step=5.0,
+                format="%.0f",
+                key="add_member_utilization_pct",
+                help=(
+                    "Доля контрактных часов, которую фирма продаёт клиентам. "
+                    "Обычно 60–75%, у партнёров ниже."
+                ),
             )
 
-        if st.button("🧮 Рассчитать стоимость часа", key="btn_calc_fot"):
-            try:
-                st.session_state["fot_calc_result"] = employee_full_cost(form_payroll())
-            except ValidationError as exc:
-                st.error(f"Не удалось посчитать: {exc}")
-
-        fot_result = st.session_state.get("fot_calc_result")
-        if fot_result:
-            er_pct = (
-                fot_result.employer_taxes / fot_result.gross_salary * PERCENT
-                if fot_result.gross_salary > 0
-                else 0
-            )
-            hourly_cost = fot_result.cost_rate_per_hour
-            st.markdown(
-                f"""
-                | Показатель | Значение |
-                |---|---|
-                | Оклад | {fot_result.gross_salary:,.0f} |
-                | Взносы работодателя ({er_pct:.1f}%) | {fot_result.employer_taxes:,.0f} |
-                | **Итого расход на сотрудника, мес** | **{fot_result.total_monthly_cost:,.0f}** |
-                | **Стоимость часа (ФОТ)** ← рекомендуемый cost_rate | **{hourly_cost:,.0f}** |
-                """
-            )
-            st.button(
-                "✅ Использовать как cost_rate", key="btn_use_fot", on_click=use_fot_cost_rate
-            )
-
-    new_cost = st.number_input(
-        "Себестоимость часа (cost_rate)",
-        min_value=0.0,
-        step=500.0,
-        format="%.0f",
-        key="add_member_cost_rate",
-        help="Если рассчитали через ФОТ — используйте кнопку выше; иначе введите значение вручную.",
-    )
-
-    if fot_result and fot_result.cost_rate_per_hour > 0 and new_cost > 0:
-        suggested = float(fot_result.cost_rate_per_hour)
-        delta = abs(new_cost - suggested) / suggested
-        if delta > COST_RATE_FOT_TOLERANCE:
-            st.warning(
-                f"Введённый cost_rate ({new_cost:,.0f}) отличается от расчёта "
-                f"по ФОТ ({suggested:,.0f}) на {delta * 100:.0f}% — "
-                "проверьте корректность данных.",
-                icon="⚠️",
+        preview: EmployeeCost | None
+        try:
+            preview = employee_cost(form_employee())
+        except ValidationError:
+            preview = None
+        if preview is not None and preview.monthly_cost > 0:
+            sym = CURRENCY_SYMBOLS[Currency(st.session_state["add_member_currency"])]
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric(f"В месяц, {sym}", f"{preview.monthly_cost:,.0f}")
+            m2.metric(f"Контрактный час, {sym}", f"{preview.contract_cost_rate:,.0f}")
+            m3.metric(f"Биллируемый час, {sym}", f"{preview.cost_rate:,.0f}")
+            m4.metric(
+                f"Недозагрузка, {sym}/ч",
+                f"{preview.underutilization_rate:,.0f}",
+                help="Себестоимость биллируемого часа минус контрактного: оплата "
+                "небиллируемого времени, которую должен вернуть каждый проданный час.",
             )
 
     st.button("➕ Добавить сотрудника", type="primary", key="btn_add_member", on_click=add_member)
@@ -416,30 +472,35 @@ with tab_team:
     if not team_list:
         st.info("Пока никого нет. Добавьте первого сотрудника выше.")
     else:
-        widths = [2, 1.2, 1, 1, 1, 0.5]
-        h1, h2, h3, h4, h5, _h6 = st.columns(widths)
-        h1.markdown("**Имя**")
-        h2.markdown("**Роль**")
-        h3.markdown("**Ставка клиенту**")
-        h4.markdown("**Себестоимость**")
-        h5.markdown("**ФОТ ₽/ч**")
+        widths = [2, 1.2, 1, 1, 1, 1, 0.8, 0.5]
+        headers = [
+            "Имя",
+            "Роль",
+            "Ставка клиенту",
+            "В месяц",
+            "Контр. час",
+            "Биллир. час",
+            "Утилизация",
+        ]
+        for column, header in zip(st.columns(widths), headers, strict=False):
+            column.markdown(f"**{header}**")
         for idx, member in enumerate(team_list):
-            c1, c2, c3, c4, c5, c6 = st.columns(widths)
-            c1.write(f"**{member.name}**")
-            c2.write(ROLE_LABELS[member.role])
-            c3.write(f"{member.billing_rate:,.0f}")
-            c4.write(f"{member.cost_rate:,.0f}")
-            payroll = member.payroll
-            if payroll is not None and payroll.gross_salary > 0:
-                c5.write(f"{employee_full_cost(payroll).cost_rate_per_hour:,.0f}")
-            else:
-                c5.write("—")
-            if c6.button("🗑", key=f"del_member_{idx}", help="Удалить"):
+            cost = employee_cost(member)
+            sym = CURRENCY_SYMBOLS[member.currency]
+            cells = st.columns(widths)
+            cells[0].write(f"**{member.name}**")
+            cells[1].write(ROLE_LABELS[member.role])
+            cells[2].write(f"{member.billing_rate:,.0f} {sym}")
+            cells[3].write(f"{cost.monthly_cost:,.0f} {sym}")
+            cells[4].write(f"{cost.contract_cost_rate:,.0f} {sym}")
+            cells[5].write(f"{cost.cost_rate:,.0f} {sym}")
+            cells[6].write(f"{member.target_utilization * PERCENT:.0f}%")
+            if cells[7].button("🗑", key=f"del_member_{idx}", help="Удалить"):
                 team_list.pop(idx)
                 st.rerun()
         st.caption(
-            f"Всего: {len(team_list)} сотрудников · "
-            "столбцы: Имя · Роль · Ставка клиенту · Себестоимость · ФОТ ₽/ч (расчёт) · 🗑"
+            f"Всего: {len(team_list)} сотрудников · «Биллир. час» — себестоимость "
+            "биллируемого часа, она идёт в расчёт проекта."
         )
 
 
@@ -449,8 +510,8 @@ with tab_team:
 with tab_exp:
     st.subheader("Накладные расходы фирмы (Overheads)")
     st.caption(
-        "Ставка накладных = Σ(месячные накладные) / биллируемые часы в месяц. "
-        "Аллоцируется на проект пропорционально отработанным часам."
+        "Ставка накладных = Σ(месячные накладные) / биллируемая ёмкость команды. "
+        "На проект относится пропорционально его часам."
     )
 
     def editor_rows(items: list[Overhead]) -> list[dict[str, object]]:
@@ -526,61 +587,31 @@ with tab_exp:
             st.warning(f"Пропущена запись «{row['Название']}»: {exc}")
     st.session_state[state.OVERHEADS] = parsed
 
-    st.markdown("### Часы фирмы")
-    st.session_state.setdefault(state.CONTRACT_HOURS, float(st.session_state[state.BILLABLE_HOURS]))
-    col_ch_total, col_bh = st.columns(2)
-    with col_ch_total:
-        contract_hours_total = st.number_input(
-            "Контрактные часы в месяц (всего по команде)",
-            min_value=0.0,
-            value=float(st.session_state[state.CONTRACT_HOURS]),
-            step=10.0,
-            help="Сумма контрактных часов всех сотрудников. "
-            "Кнопка ниже рассчитывает автоматически из карточек команды.",
-            key="contract_hours_total_input",
+    st.markdown("### Ёмкость фирмы и ставка накладных")
+    team_now = state.team()
+    contract_total = decimal_sum(m.contract_hours_per_month for m in team_now)
+    capacity_total = billable_capacity(team_now)
+    primary_currency = state.home_currency(state.jurisdiction())
+    sym = CURRENCY_SYMBOLS[primary_currency]
+    rates_now = state.exchange_rates()
+    try:
+        total_monthly = total_overheads_monthly(parsed, primary_currency, rates_now)
+        oh_rate = overhead_rate(
+            Firm(team=tuple(team_now), overheads=tuple(parsed), exchange_rates=rates_now),
+            primary_currency,
         )
-        st.session_state[state.CONTRACT_HOURS] = contract_hours_total
-        if st.button("🔄 Рассчитать автоматически", key="btn_autocalc_contract"):
-            sum_contract = sum(
-                float(m.payroll.contract_hours_per_month)
-                for m in state.team()
-                if m.payroll is not None
-            )
-            if sum_contract <= 0:
-                st.warning(
-                    "Контрактные часы не заполнены ни у одного сотрудника. "
-                    "Заполните их в карточках команды и попробуйте снова."
-                )
-            else:
-                st.session_state[state.CONTRACT_HOURS] = sum_contract
-                st.rerun()
-    with col_bh:
-        billable_hours = st.number_input(
-            "Биллируемые часы в месяц (плановые)",
-            min_value=1.0,
-            value=float(st.session_state[state.BILLABLE_HOURS]),
-            step=10.0,
-            help="Сколько часов реально выставляется клиентам в месяц. "
-            "Обычно 60–75% от контрактных. "
-            "Используется как знаменатель в формуле overhead_rate.",
-            key="billable_hours_input",
-        )
-        st.session_state[state.BILLABLE_HOURS] = billable_hours
-
-    total_monthly = total_overheads_monthly(parsed)
-    oh_rate = overhead_rate(parsed, to_decimal(billable_hours))
-    utilization_pct = (
-        billable_hours / contract_hours_total * 100.0 if contract_hours_total > 0 else 0.0
-    )
-    primary_country = Country.KZ if mode == JurisdictionMode.KZ else Country.RF
-    sym = CURRENCY_SYMBOLS[primary_country.currency]
+    except CurrencyConversionError as exc:
+        st.warning(f"{exc}. Курсы задаются на вкладке «Юрисдикция, налоги, курсы».")
+        total_monthly = oh_rate = ZERO
+    utilization = capacity_total / contract_total * PERCENT if contract_total > 0 else ZERO
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Контрактные часы", f"{contract_hours_total:,.0f} ч/мес")
-    m2.metric("Биллируемые часы", f"{billable_hours:,.0f} ч/мес")
-    m3.metric("Утилизация", f"{utilization_pct:.0f}%")
+    m1.metric("Контрактные часы", f"{contract_total:,.0f} ч/мес")
+    m2.metric("Биллируемая ёмкость", f"{capacity_total:,.1f} ч/мес")
+    m3.metric("Утилизация фирмы", f"{utilization:.0f}%")
     m4.metric(f"Ставка накладных, {sym}/ч", f"{oh_rate:,.1f}")
     st.caption(
-        f"Накладные в месяц: **{total_monthly:,.0f} {sym}** · "
-        "Ставка накладных = накладные ÷ биллируемые часы."
+        f"Накладные в месяц: **{total_monthly:,.0f} {sym}** · Ставка накладных = накладные ÷ "
+        "биллируемая ёмкость команды (Σ контрактные часы × утилизация). Ёмкость "
+        "считается по карточкам сотрудников на вкладке «Команда»."
     )

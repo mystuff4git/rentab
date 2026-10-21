@@ -1,50 +1,50 @@
-"""Дифференциальный тест: ядро и живой v0.3 на случайных сценариях.
+"""Дифференциальный тест: ядро и живой v0.3 на случайных сценариях (фаза 2).
 
-Снимки фиксируют 35 точек. Здесь hypothesis генерирует сценарии в формате
-`scenarios/README.md` — команды, этапы (в том числе с удалённым
-исполнителем и одноимённые), накладные в разных валютах и периодах,
-пошлины и прочие расходы, все налоговые конфигурации матрицы и режим
-«Оба», обе модели ценообразования. Каждый сценарий считает
-`legacy_runner` (повтор страниц v0.3) и ядро через адаптер; results,
-dashboard и XLSX должны совпасть с допуском `equivalence.py`.
+hypothesis генерирует сценарии в формате `scenarios/README.md` — команды,
+этапы (в том числе с удалённым исполнителем и одноимённые), накладные в
+разных валютах и периодах, пошлины и прочие расходы, все налоговые
+конфигурации матрицы и режим «Оба», обе модели ценообразования. Каждый
+сценарий считает `legacy_runner` (повтор страниц v0.3) и ядро при
+нейтральном переводе входов (`core_adapter.NEUTRAL`).
+
+При нейтральном переводе ядро видит те же себестоимость часа, ёмкость,
+расходы и курсы 1 : 1, что и v0.3, поэтому вправе отличаться только
+методологией налога (docs/methodology.md):
+
+- издержки, ставки, часы, рычаг и пошлины совпадают с v0.3;
+- почасовая модель: выручка и налог на доход совпадают, НДС не вычитается
+  из NNE (L-02), а минимальный налог УСН может его уменьшить (L-03):
+  NNE = NNE v0.3 + НДС v0.3 − (мин. налог − налог с прибыли);
+- фикс-цена: НДС уходит из знаменателя закрытой формулы (L-02), минимальный
+  налог берётся по формуле max(P_A, P_B) (L-03); цена существует ровно
+  тогда, когда m* + t < 1 (и m* + t_min < 1).
 """
 
 from __future__ import annotations
 
-import datetime as dt
+from decimal import Decimal
 from typing import Any
-from unittest import mock
 
 import pytest
 from hypothesis import event, example, given, settings
 from hypothesis import strategies as st
 
-from rentab_core.analysis.dashboard import dashboard
 from rentab_core.errors import FixedPriceError
 from rentab_core.estimate import calculate_estimate
-from rentab_core.export import estimate_xlsx
-from tests.characterization.core_adapter import (
-    dashboard_to_legacy,
-    estimate_to_results,
-    scenario_to_core,
-)
-from tests.characterization.equivalence import diff, diff_workbook, fail_on_diffs
-from tests.characterization.legacy import estimate_export
-from tests.characterization.legacy_runner import (
-    calculate_estimate as legacy_calculate,
-)
-from tests.characterization.legacy_runner import (
-    dashboard_view,
-    load_scenario,
-)
-from tests.characterization.test_legacy_export import FrozenDate, dump_workbook
+from rentab_core.money import ONE
+from rentab_core.pricing.fixed import cost_plus_price
+from rentab_core.results import Estimate
+from tests.characterization.core_adapter import NEUTRAL, scenario_to_core
+from tests.characterization.legacy_runner import calculate_estimate as legacy_calculate
+from tests.characterization.legacy_runner import load_scenario
 from tests.characterization.test_legacy_tax_matrix import build_scenario
 
 pytestmark = pytest.mark.characterization
 
 MAX_EXAMPLES = 300
-UNREACHABLE_MESSAGE = "проект не может быть прибыльным"
-ISSUE_DATE = dt.date(2026, 3, 16)
+# Деньги сравниваются с точностью до копейки (v0.3 считает во float).
+KOPECK = Decimal("0.01")
+RATIO_TOLERANCE = Decimal("1e-6")
 
 MATRIX = load_scenario("matrix")
 JURISDICTIONS: list[dict[str, Any]] = [c["jurisdiction_params"] for c in MATRIX["tax_configs"]]
@@ -144,47 +144,107 @@ def matrix_example(config_id: str, target_margin_pct: int) -> dict[str, Any]:
     return {**build_scenario(config_id, "fixed"), "target_margin_pct": target_margin_pct}
 
 
-def legacy_xlsx(results: dict[str, Any], firm_name: str) -> bytes:
-    """Смета v0.3 с зафиксированной датой."""
-    with mock.patch.object(estimate_export, "date", FrozenDate):
-        content: bytes = estimate_export.generate_estimate_xlsx(results, firm_name=firm_name)
-    return content
+def _d(value: object) -> Decimal:
+    return Decimal(str(value))
+
+
+def _close(expected: object, actual: Decimal, tolerance: Decimal = KOPECK) -> bool:
+    return abs(_d(expected) - actual) <= tolerance
+
+
+def check_common(legacy: dict[str, Any], estimate: Estimate) -> None:
+    """Входы, которые нейтральный перевод сохраняет: строки, ставки, издержки, пошлины."""
+    lines = legacy["team_with_hours"]
+    assert len(lines) == len(estimate.lines)
+    for expected, actual in zip(lines, estimate.lines, strict=True):
+        assert expected["name"] == actual.employee_name
+        assert _close(expected["hours"], actual.hours)
+        assert _close(expected["billing_rate"], actual.billing_rate)
+        assert _close(expected["cost_rate"], actual.cost_rate)
+    assert _close(legacy["total_hours"], estimate.total_hours)
+    assert _close(legacy["blended_rate"], estimate.blended_rate)
+    assert _close(legacy["leverage"], estimate.leverage, RATIO_TOLERANCE)
+    assert _close(legacy["overhead_rate"], estimate.overhead_rate)
+    assert _close(legacy["direct_labor"], estimate.direct_labor)
+    assert _close(legacy["overheads_alloc"], estimate.overheads_alloc)
+    assert _close(legacy["disbursements_own"], estimate.disbursements_own)
+    assert _close(legacy["disbursements"], estimate.disbursements_billed)
+    # Подпись УСН с НДС в фазе 2 дополнена ставкой НДС, остальные — как в v0.3.
+    assert estimate.regime_label.startswith(legacy["regime_label"])
+
+
+def check_hourly(legacy: dict[str, Any], estimate: Estimate) -> None:
+    """Почасовая модель: разница с v0.3 — только НДС (L-02) и минимальный налог (L-03)."""
+    tax = estimate.tax
+    assert _close(legacy["gross_revenue"], estimate.revenue)
+    assert _close(legacy["income_tax"], tax.regular_tax)
+    assert _close(legacy["vat"], tax.vat)
+    min_tax_top_up = tax.tax - tax.regular_tax
+    assert _close(_d(legacy["nne"]) + _d(legacy["vat"]) - min_tax_top_up, estimate.nne)
+    assert _close(_d(legacy["total_client"]) + _d(legacy["vat"]), estimate.total_client)
+    if min_tax_top_up > 0:
+        event("L-03: работает минимальный налог")
+
+
+def check_fixed(legacy: dict[str, Any], estimate: Estimate) -> None:
+    """Фикс-цена: НДС не в знаменателе (L-02), минимальный налог — max(P_A, P_B) (L-03)."""
+    terms, m = estimate.tax.terms, estimate.target_margin
+    assert _close(legacy["total_costs"], estimate.total_costs)
+    assert estimate.revenue == cost_plus_price(terms, estimate.total_costs, m)
+    assert abs(estimate.margin - m) <= RATIO_TOLERANCE or estimate.revenue == 0
+    if terms.vat_rate > 0:
+        assert estimate.revenue <= _d(legacy["fixed_price"]) + KOPECK
+        event("L-02: фикс-цена без НДС в знаменателе")
 
 
 @settings(max_examples=MAX_EXAMPLES)
-# Маржа + налог ≥ 1: фикс-цена недостижима (случайно такие входы почти не выпадают).
-@example(scenario=matrix_example("RF_OSNO", 80), firm_name="")
-# Точная граница: 0,70 + 0,16 + 0,20 × 0,70 = 1 (знаменатель первого шага равен нулю).
-@example(scenario=matrix_example("KZ_OUR_too_vat16", 70), firm_name="")
-# Граница: при 60% на ОСНО цена ещё не существует, при 50% — существует.
-@example(scenario=matrix_example("RF_OSNO", 50), firm_name="ООО «ИП-Консалт»")
-@given(scenario=scenarios(), firm_name=st.sampled_from(["", "ООО «ИП-Консалт»"]))
-def test_core_matches_legacy_on_random_scenarios(scenario: dict[str, Any], firm_name: str) -> None:
-    core_scenario, core_warnings = scenario_to_core(scenario)
+# Маржа + налог + НДС ≥ 1: в v0.3 цены нет, а без НДС в знаменателе она есть.
+@example(scenario=matrix_example("RF_OSNO", 60))
+# Маржа + налог ≥ 1: цены нет ни в v0.3, ни в ядре.
+@example(scenario=matrix_example("RF_OSNO", 80))
+# Точная граница v0.3: 0,70 + 0,16 + 0,20 × 0,70 = 1.
+@example(scenario=matrix_example("KZ_OUR_too_vat16", 70))
+# Низкая маржа на УСН 15%: цену определяет минимальный налог.
+@example(scenario=matrix_example("RF_USN_income_expenses", 1))
+@given(scenario=scenarios())
+def test_core_differs_from_legacy_only_by_tax_methodology(scenario: dict[str, Any]) -> None:
+    core_scenario, core_warnings = scenario_to_core(scenario, NEUTRAL)
     try:
-        legacy_results, legacy_warnings = legacy_calculate(scenario)
+        estimate = calculate_estimate(core_scenario)
+    except FixedPriceError:
+        terms_reachable = False
+    else:
+        terms_reachable = True
+    try:
+        legacy, legacy_warnings = legacy_calculate(scenario)
     except ValueError:
-        # v0.3 не нашёл фикс-цену (маржа + налог ≥ 1) — ядро должно отказать так же.
-        # Сумму в тексте ошибки не сравниваем: на точной границе m + t = 1 v0.3
-        # делает лишний шаг из-за погрешности float и сообщает другую сумму (L-20).
-        event("фикс-цена недостижима")
-        with pytest.raises(FixedPriceError, match=UNREACHABLE_MESSAGE):
-            calculate_estimate(core_scenario)
+        # v0.3 не нашёл фикс-цену (маржа + налог + НДС ≥ 1).
+        event("v0.3: фикс-цена недостижима")
+        if terms_reachable:
+            event("L-02: цена существует, когда НДС не в знаменателе")
+            assert estimate.margin == estimate.target_margin or estimate.revenue == 0
         return
-
-    estimate = calculate_estimate(core_scenario)
-    event(f"модель: {legacy_results['pricing_model']}")
     assert core_warnings == legacy_warnings
-    expected = {"results": legacy_results, "dashboard": dashboard_view(legacy_results)}
-    actual = {
-        "results": estimate_to_results(estimate),
-        "dashboard": dashboard_to_legacy(dashboard(estimate)),
-    }
-    fail_on_diffs("Ядро разошлось с v0.3", list(diff(expected, actual)))
+    if not terms_reachable:
+        # Ядро отказывает только если m* + t ≥ 1 — тогда и v0.3 обязан был отказать.
+        pytest.fail("Ядро отказало там, где v0.3 нашёл цену")
+    check_common(legacy, estimate)
+    event(f"модель: {legacy['pricing_model']}")
+    if legacy["pricing_model"] == "fixed":
+        check_fixed(legacy, estimate)
+    else:
+        check_hourly(legacy, estimate)
 
-    workbook_diffs = diff_workbook(
-        dump_workbook(legacy_xlsx(legacy_results, firm_name)),
-        dump_workbook(estimate_xlsx(estimate, firm_name=firm_name, issue_date=ISSUE_DATE)),
-        allow_rounding_ties=True,
+
+def test_vat_regime_needs_no_vat_in_fixed_price_denominator() -> None:
+    # ОСНО, маржа 60%: в v0.3 0,60 + 0,25 + 0,22 > 1 — цены нет; без НДС — есть.
+    scenario = matrix_example("RF_OSNO", 60)
+    with pytest.raises(ValueError, match="не может быть прибыльным"):
+        legacy_calculate(scenario)
+    core_scenario, _ = scenario_to_core(scenario, NEUTRAL)
+    estimate = calculate_estimate(core_scenario)
+    assert estimate.margin == Decimal("0.6")
+    expected = (
+        estimate.total_costs * (ONE - Decimal("0.25")) / (ONE - Decimal("0.25") - Decimal("0.6"))
     )
-    fail_on_diffs("XLSX ядра разошёлся с v0.3", list(workbook_diffs))
+    assert estimate.revenue == expected

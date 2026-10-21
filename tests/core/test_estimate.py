@@ -1,135 +1,256 @@
-"""Расчёт сметы: оркестрация страницы «Проект» v0.3 в ядре."""
+"""Расчёт сметы: оркестрация ядра по методологии фазы 2."""
 
 from __future__ import annotations
 
 import pytest
 
-from rentab_core.errors import FixedPriceError
+from rentab_core.errors import CurrencyConversionError, FixedPriceError
 from rentab_core.estimate import calculate_estimate
 from rentab_core.models import (
-    Assignment,
+    CappedPricing,
     Country,
+    Disbursement,
     DisbursementKind,
+    Employee,
+    ExchangeRates,
+    Firm,
     Jurisdiction,
     JurisdictionMode,
     KzOurProfile,
+    MonthlyCost,
     OsnoProfile,
-    Stage,
+    Overhead,
+    Period,
+    Project,
+    Role,
+    Scenario,
+    UsnProfile,
+    UsnVat,
+    VatMode,
 )
 from rentab_core.money import Currency
-from rentab_core.results import FixedPriceEstimate, HourlyEstimate, StageFlag, UnresolvedAssignment
+from rentab_core.results import StageFlag, UnresolvedAssignment
 from tests.core.factories import basic_scenario, d, disbursement, fixed, stage
 
 
-def test_hourly_estimate_matches_v03_hand_calculation() -> None:
-    # Сценарий 1 из legacy/rentab_v03/test_scenario.py.
+def test_hourly_estimate_control_scenario() -> None:
+    # Сценарий 1 из legacy/rentab_v03/test_scenario.py (нижняя таблица слайда 3).
     estimate = calculate_estimate(basic_scenario())
-    assert isinstance(estimate, HourlyEstimate)
-    assert estimate.gross_revenue == d(165_000)
+    assert estimate.shadow_value == d(165_000)
+    assert estimate.revenue == d(165_000)
     assert estimate.direct_labor == d(92_500)
     assert estimate.blended_rate == d(8_250)
     assert estimate.leverage == d(3)
     assert estimate.overhead_rate == d(500)
     assert estimate.overheads_alloc == d(10_000)
-    assert estimate.tax.total_tax == d(9_900)
+    assert estimate.total_costs == d(102_500)
+    assert estimate.tax.tax == d(9_900)
+    assert estimate.vat == 0
     assert estimate.nne == d(52_600)
+    assert estimate.margin == d(52_600) / d(165_000)
     assert estimate.total_client == d(165_000)
     assert estimate.regime_label == "УСН income (6%)"
     assert estimate.currency == Currency.RUB
 
 
-def test_hourly_estimate_with_disbursements() -> None:
+def test_underutilization_cost() -> None:
+    # Факторные сотрудники: H = 160, u = 0,5 → c = 2ĉ, недозагрузка = половина трудозатрат.
+    estimate = calculate_estimate(basic_scenario())
+    assert estimate.underutilization_cost == d(92_500) / 2
+    line = estimate.lines[0]
+    assert line.cost_rate == d(8_000)
+    assert line.contract_cost_rate == d(4_000)
+
+
+def test_disbursements_are_transit_or_own_costs() -> None:
     scenario = basic_scenario(
+        jurisdiction=Jurisdiction(rf=UsnProfile(vat=UsnVat.VAT_5)),
         disbursements=(
             disbursement(DisbursementKind.BILLABLE, 38_500),
             disbursement(DisbursementKind.OWN, 3_000),
-            disbursement(DisbursementKind.EXTRA, 7_000),
-        )
+            # «Прочее» v0.3 (нотариальный перевод) — тоже собственный расход (L-12).
+            disbursement(DisbursementKind.OWN, 7_000),
+        ),
     )
     estimate = calculate_estimate(scenario)
-    assert isinstance(estimate, HourlyEstimate)
-    # Пошлины — транзит: в счёте есть, в базе налога нет.
-    assert estimate.total_client == d(165_000 + 38_500)
-    assert estimate.tax.taxable_base == d(165_000)
-    # Собственные расходы уменьшают NNE; «Прочее» — нет (KNOWN-BUG L-12 → фаза 2).
-    assert estimate.nne == d(52_600 - 3_000)
+    # Пошлины — транзит: в счёте есть, в выручке и базе налога нет.
+    assert estimate.revenue == d(165_000)
+    assert estimate.disbursements_billed == d(38_500)
+    assert estimate.disbursements_own == d(10_000)
+    assert estimate.tax.tax == d(9_900)
+    # НДС сверху: к оплате R + НДС + D (L-02).
+    assert estimate.vat == d(8_250)
+    assert estimate.price_with_vat == d(173_250)
+    assert estimate.total_client == d(165_000 + 8_250 + 38_500)
+    assert estimate.nne == d(52_600 - 10_000)
 
 
-def test_fixed_estimate_totals() -> None:
+def test_vat_does_not_reduce_nne() -> None:
+    # L-02: ОСНО + НДС 22% — NNE как у ОСНО без НДС; клиент платит НДС сверху.
+    estimate = calculate_estimate(basic_scenario(jurisdiction=Jurisdiction(rf=OsnoProfile())))
+    assert estimate.tax.tax == d(15_625)
+    assert estimate.vat == d(36_300)
+    assert estimate.nne == d(46_875)
+    assert estimate.total_client == d(201_300)
+
+
+def test_prices_including_vat() -> None:
+    base = basic_scenario(jurisdiction=Jurisdiction(rf=UsnProfile(vat=UsnVat.VAT_5)))
+    scenario = base.model_copy(
+        update={"project": base.project.model_copy(update={"vat_mode": VatMode.INCLUDED})}
+    )
+    estimate = calculate_estimate(scenario)
+    assert estimate.shadow_value == d(165_000)
+    assert estimate.revenue == d(165_000) / d("1.05")
+    assert estimate.price_with_vat == d(165_000)
+    assert estimate.write_off == 0
+
+
+def test_cost_plus_fixed_price() -> None:
     scenario = basic_scenario(
-        fixed(), stages=(stage("Подготовка", "Иванов", 10), stage("Регистрация", "Петрова", 15))
+        fixed(), stages=(stage("Подготовка", ("Иванов", 10)), stage("Регистрация", ("Петрова", 15)))
     )
     estimate = calculate_estimate(scenario)
-    assert isinstance(estimate, FixedPriceEstimate)
     # Себестоимость 8 000 × 10 + 3 500 × 15 = 132 500, накладные 500 × 25 = 12 500.
     assert estimate.total_costs == d(145_000)
+    assert estimate.revenue == d(145_000) / d("0.64")
+    assert estimate.margin == d("0.30")
     assert estimate.target_margin == d("0.30")
-    assert estimate.total_client == estimate.fixed_price
+    assert estimate.total_client == estimate.revenue
     assert [s.stage_name for s in estimate.stages] == ["Подготовка", "Регистрация"]
 
 
+def test_agreed_fixed_price() -> None:
+    estimate = calculate_estimate(basic_scenario(fixed(150_000)))
+    assert estimate.revenue == d(150_000)
+    assert estimate.nne == d(150_000) - d(102_500) - d(9_000)
+
+
+def test_capped_fee() -> None:
+    estimate = calculate_estimate(basic_scenario(CappedPricing(cap=d(150_000))))
+    assert estimate.revenue == d(150_000)
+    assert estimate.write_off == d(15_000)
+    uncapped = calculate_estimate(basic_scenario(CappedPricing(cap=d(200_000))))
+    assert uncapped.revenue == d(165_000)
+    assert uncapped.write_off == 0
+
+
+def test_capped_fee_including_vat() -> None:
+    # Ставки и потолок «включая НДС»: списание считается без НДС.
+    base = basic_scenario(
+        CappedPricing(cap=d(157_500)), jurisdiction=Jurisdiction(rf=UsnProfile(vat=UsnVat.VAT_5))
+    )
+    scenario = base.model_copy(
+        update={"project": base.project.model_copy(update={"vat_mode": VatMode.INCLUDED})}
+    )
+    estimate = calculate_estimate(scenario)
+    assert estimate.revenue == d(150_000)
+    assert estimate.shadow_value_net == d(165_000) / d("1.05")
+    assert estimate.write_off == d(165_000) / d("1.05") - d(150_000)
+
+
 def test_fixed_estimate_raises_when_unreachable() -> None:
-    scenario = basic_scenario(fixed("0.80"), jurisdiction=Jurisdiction(rf=OsnoProfile()))
-    with pytest.raises(FixedPriceError):
+    scenario = basic_scenario(
+        fixed(), jurisdiction=Jurisdiction(rf=OsnoProfile()), target_margin="0.80"
+    )
+    with pytest.raises(FixedPriceError, match="недостижима"):
         calculate_estimate(scenario)
 
 
 def test_unknown_executor_is_skipped_and_reported() -> None:
     scenario = basic_scenario(
-        stages=(stage("Анализ", "Иванов", 5), stage("Этап уволенного", "Удалённый", 40))
+        stages=(stage("Анализ", ("Иванов", 5)), stage("Этап уволенного", ("Удалённый", 40)))
     )
     estimate = calculate_estimate(scenario)
     assert estimate.total_hours == d(5)
     assert estimate.unresolved_assignments == (
         UnresolvedAssignment(stage_name="Этап уволенного", employee="Удалённый"),
     )
+    assert [s.stage_name for s in estimate.stages] == ["Анализ"]
 
 
-def test_stage_with_several_assignments() -> None:
-    # Ядро допускает несколько исполнителей на этапе, как FixedPriceCalculator v0.3.
-    pyramid = Stage(
-        name="Ответ на уведомление",
-        assignments=(
-            Assignment(employee="Иванов", hours=d(2)),
-            Assignment(employee="Петрова", hours=d(10)),
-        ),
+def test_own_expense_of_skipped_stage_is_spread() -> None:
+    scenario = basic_scenario(
+        stages=(stage("Анализ", ("Иванов", 5)), stage("Этап уволенного", ("Удалённый", 40))),
+        disbursements=(disbursement(DisbursementKind.OWN, 3_000, stage="Этап уволенного"),),
     )
+    (only,) = calculate_estimate(scenario).stages
+    assert only.own == d(3_000)
+
+
+def test_pyramid_on_one_stage() -> None:
+    # L-05: «партнёр проверяет 2 ч, юрист делает 10 ч» — один этап.
+    pyramid = stage("Ответ на уведомление", ("Иванов", 2), ("Петрова", 10))
     estimate = calculate_estimate(basic_scenario(fixed(), stages=(pyramid,)))
-    assert isinstance(estimate, FixedPriceEstimate)
     assert len(estimate.lines) == 2
     (only,) = estimate.stages
-    assert only.revenue_share == estimate.fixed_price
+    assert only.hours == d(12)
+    assert only.revenue == estimate.revenue
     assert only.flag == StageFlag.GREEN
 
 
-def test_both_mode_uses_project_country() -> None:
-    jurisdiction = Jurisdiction(mode=JurisdictionMode.BOTH, kz=KzOurProfile())
-    rf = calculate_estimate(basic_scenario(jurisdiction=jurisdiction))
-    assert rf.calc_country == Country.RF
-    scenario = basic_scenario(jurisdiction=jurisdiction)
-    kz_scenario = scenario.model_copy(
-        update={"project": scenario.project.model_copy(update={"calc_country": Country.KZ})}
+def _both_firm(rates: ExchangeRates) -> Firm:
+    team = (
+        Employee(
+            name="Сидоров",
+            role=Role.ASSOCIATE,
+            compensation=MonthlyCost(amount=d(280_000)),
+            billing_rate=d(6_000),
+            contract_hours_per_month=d(160),
+            target_utilization=d("0.5"),
+        ),
     )
-    kz = calculate_estimate(kz_scenario)
-    assert kz.calc_country == Country.KZ
+    return Firm(
+        jurisdiction=Jurisdiction(mode=JurisdictionMode.BOTH, kz=KzOurProfile()),
+        team=team,
+        overheads=(
+            Overhead(name="Москва", amount=d(120_000), period=Period.MONTHLY),
+            Overhead(
+                name="Алматы", amount=d(300_000), currency=Currency.KZT, period=Period.MONTHLY
+            ),
+        ),
+        exchange_rates=rates,
+    )
+
+
+def _both_project(country: Country) -> Project:
+    return Project(
+        stages=(stage("Регистрация", ("Сидоров", 10)),),
+        disbursements=(
+            Disbursement(name="Роспатент", kind=DisbursementKind.BILLABLE, amount=d(38_500)),
+            Disbursement(
+                name="Казпатент",
+                kind=DisbursementKind.BILLABLE,
+                amount=d(120_000),
+                currency=Currency.KZT,
+            ),
+        ),
+        calc_country=country,
+    )
+
+
+def test_both_mode_converts_currencies() -> None:
+    # L-06 и пример раздела 9 методологии: курс 0,18 ₽ за 1 ₸.
+    firm = _both_firm(ExchangeRates(rub_per_kzt=d("0.18")))
+    rf = calculate_estimate(Scenario(firm=firm, project=_both_project(Country.RF)))
+    assert rf.currency == Currency.RUB
+    assert rf.overhead_rate == d(174_000) / d(80)
+    assert rf.disbursements_billed == d(60_100)
+    kazpatent = rf.disbursements[1]
+    assert (kazpatent.original_amount, kazpatent.original_currency) == (d(120_000), Currency.KZT)
+    assert kazpatent.amount == d(21_600)
+
+    kz = calculate_estimate(Scenario(firm=firm, project=_both_project(Country.KZ)))
     assert kz.currency == Currency.KZT
-    assert kz.jurisdiction_mode == JurisdictionMode.BOTH
     assert kz.regime_label == "ОУР — ТОО (КПН) 20%"
+    # Ставка и себестоимость сотрудника из рублей переведены в тенге.
+    assert kz.lines[0].billing_rate == d(6_000) / d("0.18")
+    assert kz.lines[0].cost_rate == d(3_500) / d("0.18")
+    assert kz.disbursements_billed == d(38_500) / d("0.18") + d(120_000)
+    assert kz.revenue == rf.revenue / d("0.18")
 
 
-def test_vat_is_treated_as_firm_expense() -> None:
-    # KNOWN-BUG L-02 → фаза 2: НДС входит в налог и уменьшает NNE, а клиенту
-    # выставляются только услуги и пошлины; в фикс-цене НДС стоит в знаменателе.
-    jurisdiction = Jurisdiction(rf=OsnoProfile())
-    hourly = calculate_estimate(basic_scenario(jurisdiction=jurisdiction))
-    assert isinstance(hourly, HourlyEstimate)
-    assert hourly.tax.vat == d(165_000) * d("0.22")
-    assert hourly.tax.total_tax == hourly.tax.income_tax + hourly.tax.vat
-    assert hourly.nne == d(165_000) - d(92_500) - d(10_000) - hourly.tax.total_tax
-    assert hourly.total_client == hourly.gross_revenue
-
-    priced = calculate_estimate(basic_scenario(fixed(), jurisdiction=jurisdiction))
-    assert isinstance(priced, FixedPriceEstimate)
-    costs = priced.total_costs
-    closed_form = costs * (1 - d("0.25")) / (1 - d("0.25") - d("0.22") - d("0.30"))
-    assert abs(priced.fixed_price - closed_form) < d("0.01")
+def test_missing_exchange_rate_is_reported() -> None:
+    firm = _both_firm(ExchangeRates())
+    with pytest.raises(CurrencyConversionError, match="₽ за 1 ₸"):
+        calculate_estimate(Scenario(firm=firm, project=_both_project(Country.RF)))

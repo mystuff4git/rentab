@@ -69,27 +69,3 @@ def round_to(value: Decimal, quantum: Decimal = MONEY_QUANTUM) -> Decimal:
 def decimal_sum(values: Iterable[Decimal]) -> Decimal:
     """Сумма Decimal; для пустой последовательности — Decimal(0), а не int 0."""
     return sum(values, ZERO)
-
-
-def display_conversion_factor(source: Currency, target: Currency, rub_per_kzt: Decimal) -> Decimal:
-    """Множитель пересчёта сумм для показа на дашборде в режиме «Оба».
-
-    Повторяет v0.3 (`pages/03_Дашборд.py:170–177`): курс задаётся как
-    «1 ₸ = rub_per_kzt ₽». Пересчёт — только для отображения, в расчёт сметы
-    он не входит (L-06). Для любых других пар валют множитель равен 1.
-
-    Args:
-        source: Валюта, в которой посчитана смета.
-        target: Валюта, в которой нужно показать суммы.
-        rub_per_kzt: Курс рублей за один тенге.
-
-    Returns:
-        Множитель, на который умножается каждая сумма.
-    """
-    if source == target:
-        return ONE
-    if source == Currency.RUB and target == Currency.KZT:
-        return ONE / rub_per_kzt if rub_per_kzt > 0 else ONE
-    if source == Currency.KZT and target == Currency.RUB:
-        return rub_per_kzt
-    return ONE

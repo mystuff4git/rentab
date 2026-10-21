@@ -1,9 +1,10 @@
 # Ставки РФ, которые использует ядро Rentab.
 #
-# Все значения перенесены из Rentab v0.3
+# Значения перенесены из Rentab v0.3
 # (legacy/rentab_v03/modules/jurisdiction.py, словарь TAX_RATES_RF_2026)
 # без проверки по первоисточникам, поэтому у каждой ставки needs_review: true
-# и source_url: null. effective_from — год, который заявлял v0.3.
+# и source_url: null. Ставка usn.min_tax добавлена в фазе 2.
+# effective_from — год, который заявлял v0.3.
 # Проверка по НК РФ и обновление реестра — фаза 3 (docs/ROADMAP.md, L-08).
 #
 # value — доля, а не процент: 0.06 = 6%.
@@ -20,7 +21,13 @@ rates:
     effective_from: 2026-01-01
     source_url: null
     needs_review: true
-    note: "УСН «Доходы минус расходы». Минимального налога 1% в v0.3 нет. v0.3: jurisdiction.py:33"
+    note: "УСН «Доходы минус расходы». v0.3: jurisdiction.py:33"
+  usn.min_tax:
+    value: 0.01
+    effective_from: 2026-01-01
+    source_url: null
+    needs_review: true
+    note: "Минимальный налог УСН «Доходы минус расходы», доля доходов (п. 6 ст. 346.18 НК РФ). Добавлен в фазе 2, в v0.3 его не было (L-08); ссылку на первоисточник ставит фаза 3"
   usn.vat_5:
     value: 0.05
     effective_from: 2026-01-01

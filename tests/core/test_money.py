@@ -7,11 +7,8 @@ from decimal import Decimal
 import pytest
 
 from rentab_core.money import (
-    ONE,
     ZERO,
-    Currency,
     decimal_sum,
-    display_conversion_factor,
     round_to,
     to_decimal,
 )
@@ -65,19 +62,3 @@ def test_decimal_sum_of_empty_is_decimal_zero() -> None:
     assert isinstance(total, Decimal)
     assert total == ZERO
     assert decimal_sum([Decimal("0.1")] * 3) == Decimal("0.3")
-
-
-@pytest.mark.parametrize(
-    ("source", "target", "rate", "expected"),
-    [
-        (Currency.RUB, Currency.RUB, "0.18", ONE),
-        (Currency.KZT, Currency.RUB, "0.18", Decimal("0.18")),
-        (Currency.RUB, Currency.KZT, "0.2", Decimal(5)),
-        (Currency.RUB, Currency.KZT, "0", ONE),  # нулевой курс — без пересчёта
-        (Currency.USD, Currency.RUB, "0.18", ONE),
-    ],
-)
-def test_display_conversion_factor(
-    source: Currency, target: Currency, rate: str, expected: Decimal
-) -> None:
-    assert display_conversion_factor(source, target, Decimal(rate)) == expected

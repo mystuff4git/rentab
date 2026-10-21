@@ -1,9 +1,9 @@
 """Взносы работодателя с ФОТ по юрисдикции (перенос `get_employer_contribution_rate` v0.3).
 
-Ставка подставляется по умолчанию в калькулятор себестоимости часа на
-странице «Настройка». Зарплатные налоги работника (НДФЛ, ИПН и пр.) ядро
-пока не считает: в v0.3 метод `add_payroll_taxes` нигде не вызывался (L-14),
-полная модель — фаза 3.
+Ставка подставляется по умолчанию в калькулятор полной стоимости сотрудника
+(оклад + взносы) на странице «Настройка». Зарплатные налоги работника (НДФЛ,
+ИПН и пр.) ядро пока не считает: в v0.3 метод `add_payroll_taxes` нигде не
+вызывался (L-14), полная модель — фаза 3.
 """
 
 from __future__ import annotations
@@ -38,7 +38,9 @@ KZ_EMPLOYER_PAYROLL_KEYS: tuple[str, ...] = (
 )
 
 
-def employer_contribution_rate(jurisdiction: Jurisdiction | None) -> Decimal:
+def employer_contribution_rate(
+    jurisdiction: Jurisdiction | None, country: Country | None = None
+) -> Decimal:
     """Суммарная ставка взносов работодателя с ФОТ, доля.
 
     - РФ, УСН и ОСНО — по выбранному тарифу (стандартный или нулевой);
@@ -47,11 +49,17 @@ def employer_contribution_rate(jurisdiction: Jurisdiction | None) -> Decimal:
     - РК — ООСМС + СО + ОПВР;
     - без юрисдикции — стандартный тариф РФ.
 
-    В режиме «Оба» берётся РФ (KNOWN-BUG L-06 → фаза 2).
+    Args:
+        jurisdiction: Юрисдикция фирмы.
+        country: Страна трудоустройства сотрудника. Нужна в режиме «Оба»,
+            где у фирмы сотрудники в обеих странах; по умолчанию — РФ.
+            В режимах «РФ» и «РК» страна определена юрисдикцией.
     """
     if jurisdiction is None:
         return rate(Country.RF, SOCIAL_CONTRIBUTION_KEYS[SocialContributions.STANDARD])
-    if jurisdiction.mode == JurisdictionMode.KZ:
+    if jurisdiction.mode == JurisdictionMode.KZ or (
+        jurisdiction.mode == JurisdictionMode.BOTH and country == Country.KZ
+    ):
         return decimal_sum(rate(Country.KZ, key) for key in KZ_EMPLOYER_PAYROLL_KEYS)
 
     profile = jurisdiction.rf or DEFAULT_RF_TAX_PROFILE

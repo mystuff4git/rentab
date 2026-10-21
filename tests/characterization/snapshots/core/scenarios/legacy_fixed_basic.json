@@ -1,0 +1,80 @@
+{
+  "estimate": {
+    "blended_rate": 0.0,
+    "currency": "RUB",
+    "dashboard": {
+      "effective_tax_rate_pct": 6.0,
+      "margin_pct": 30.0,
+      "profitability": "profitable",
+      "underutilization_share_pct": 35.0
+    },
+    "direct_labor": 123076.923077,
+    "disbursements": [],
+    "disbursements_billed": 0.0,
+    "disbursements_own": 0.0,
+    "leverage": 1.5,
+    "lines": [
+      {
+        "billing_rate": 0.0,
+        "contract_cost_rate": 5000.0,
+        "cost_rate": 7692.307692,
+        "employee": "Иванов",
+        "hours": 10.0,
+        "stage": "Подготовка"
+      },
+      {
+        "billing_rate": 0.0,
+        "contract_cost_rate": 2000.0,
+        "cost_rate": 3076.923077,
+        "employee": "Петрова",
+        "hours": 15.0,
+        "stage": "Регистрация"
+      }
+    ],
+    "margin": 0.3,
+    "min_tax": 0.0,
+    "nne": 61984.89011,
+    "overhead_rate": 366.300366,
+    "overheads_alloc": 9157.509158,
+    "pricing": "fixed",
+    "regime_label": "УСН income (6%)",
+    "regular_tax": 12396.978022,
+    "revenue": 206616.300366,
+    "shadow_value": 0.0,
+    "stages": [
+      {
+        "costs": 80586.080586,
+        "flag": "green",
+        "hours": 10.0,
+        "margin": 0.315956,
+        "nne": 40800.995879,
+        "own": 0.0,
+        "revenue": 129135.187729,
+        "shadow_value": 0.0,
+        "stage": "Подготовка",
+        "tax": 7748.111264
+      },
+      {
+        "costs": 51648.351648,
+        "flag": "yellow",
+        "hours": 15.0,
+        "margin": 0.273407,
+        "nne": 21183.894231,
+        "own": 0.0,
+        "revenue": 77481.112637,
+        "shadow_value": 0.0,
+        "stage": "Регистрация",
+        "tax": 4648.866758
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 12396.978022,
+    "total_client": 206616.300366,
+    "total_costs": 132234.432234,
+    "total_hours": 25.0,
+    "underutilization_cost": 43076.923077,
+    "unresolved": [],
+    "vat": 0.0
+  },
+  "warnings": []
+}

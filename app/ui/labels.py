@@ -18,6 +18,7 @@ from rentab_core.models import (
     SocialContributions,
     UsnObject,
     UsnVat,
+    VatMode,
 )
 from rentab_core.rates import rate
 from rentab_core.results import StageFlag
@@ -42,21 +43,32 @@ RF_REGIME_LABELS: Mapping[str, str] = {
     "osno": "ОСНО",
     "npd": "НПД (самозанятость)",
 }
+# Модели цены (ключи — ui.state.PRICING_*).
 PRICING_LABELS: Mapping[str, str] = {
-    "hourly": "Биллинговая (часы × ставка)",
-    "fixed": "Фиксированная (издержки + маржа)",
+    "hourly": "Почасовая (часы × ставка)",
+    "capped": "Почасовая с потолком",
+    "fixed": "Фикс: издержки + маржа",
+    "agreed": "Фикс: согласованная цена",
 }
-# Категории произвольного расхода в форме «Проекта» (02_Проект.py:82–86).
+VAT_MODE_LABELS: Mapping[VatMode, str] = {
+    VatMode.ON_TOP: "Без НДС (НДС начисляется сверху)",
+    VatMode.INCLUDED: "Включая НДС",
+}
+# Способ задать полную стоимость сотрудника в месяц (ключи — Compensation.kind).
+COMPENSATION_LABELS: Mapping[str, str] = {
+    "salary": "Оклад + взносы",
+    "monthly": "Сумма в месяц (нормативное вознаграждение партнёра)",
+}
+# Категории произвольного расхода в форме «Проекта». «Прочее» v0.3 — собственный
+# расход (L-12).
 CUSTOM_EXPENSE_LABELS: Mapping[DisbursementKind, str] = {
-    DisbursementKind.OWN: "Собственный расход (не перевыставляется клиенту)",
-    DisbursementKind.BILLABLE: "Перевыставляемый клиенту (помимо пошлин)",
-    DisbursementKind.EXTRA: "Прочее",
+    DisbursementKind.OWN: "Собственный расход фирмы (курьер, перевод, командировка…)",
+    DisbursementKind.BILLABLE: "Возмещается клиентом (помимо пошлин)",
 }
-# Те же категории в таблице расходов «Дашборда» (03_Дашборд.py:64–69).
+# Те же категории в таблице расходов «Дашборда».
 EXPENSE_TYPE_LABELS: Mapping[DisbursementKind, str] = {
-    DisbursementKind.BILLABLE: "Перевыставляемый клиенту",
+    DisbursementKind.BILLABLE: "Возмещается клиентом",
     DisbursementKind.OWN: "За счёт фирмы",
-    DisbursementKind.EXTRA: "Прочие проектные расходы",
 }
 STAGE_FLAG_LABELS: Mapping[StageFlag, str] = {
     StageFlag.GREEN: "🟢 Норма",

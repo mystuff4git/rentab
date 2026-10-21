@@ -1,7 +1,11 @@
-"""Себестоимость: стоимость сотрудника, трудозатраты, накладные, прямые расходы.
+"""Себестоимость: стоимость часа сотрудника, ставка накладных, издержки проекта.
 
-Перенос из v0.3: `team.calculate_employee_full_cost`, `team.total_direct_labor`
-и расчёт накладных из `expenses.ExpenseManager`.
+Формулы — docs/methodology.md, раздел 3:
+
+    K_i = H_i × u_i                  биллируемая ёмкость сотрудника
+    c_i = W_i / K_i                  себестоимость биллируемого часа (L-01)
+    ĉ_i = W_i / H_i                  себестоимость контрактного часа
+    ρ   = Σ OH(мес) / Σ_i K_i        ставка накладных на биллируемый час
 """
 
 from __future__ import annotations
@@ -10,45 +14,56 @@ from collections.abc import Iterable
 from decimal import Decimal
 from typing import assert_never
 
-from rentab_core.models import CoreModel, Disbursement, DisbursementKind, Overhead, Payroll, Period
-from rentab_core.money import ZERO, decimal_sum
-from rentab_core.results import EstimateLine
+from rentab_core.fx import convert
+from rentab_core.models import CoreModel, Employee, ExchangeRates, Firm, Overhead, Period
+from rentab_core.money import ZERO, Currency, decimal_sum
 
 MONTHS_PER_YEAR = Decimal(12)
 
 
 class EmployeeCost(CoreModel):
-    """Полная стоимость сотрудника в месяц и стоимость его часа."""
+    """Стоимость сотрудника и его часа в валюте сотрудника.
 
-    gross_salary: Decimal
-    employer_taxes: Decimal
-    total_monthly_cost: Decimal
-    cost_rate_per_hour: Decimal
-
-
-def employee_full_cost(payroll: Payroll) -> EmployeeCost:
-    """Калькулятор ФОТ: полная стоимость сотрудника и стоимость часа.
-
-    employer_taxes = оклад × ставка взносов;
-    total_monthly_cost = оклад + взносы;
-    cost_rate_per_hour = total_monthly_cost / контрактные часы.
-
-    KNOWN-BUG L-01 → фаза 2: знаменатель — контрактные, а не биллируемые часы,
-    поэтому стоимость небиллируемого времени не возмещается.
+    Attributes:
+        monthly_cost: W — полная стоимость в месяц.
+        contract_hours: H — контрактные часы в месяц.
+        billable_capacity: K = H × u — биллируемые часы в месяц.
+        contract_cost_rate: ĉ = W / H.
+        cost_rate: c = W / K — себестоимость биллируемого часа.
+        underutilization_rate: c − ĉ — стоимость недозагрузки на час.
     """
-    employer_taxes = payroll.gross_salary * payroll.employer_contribution_rate
-    total = payroll.gross_salary + employer_taxes
+
+    monthly_cost: Decimal
+    contract_hours: Decimal
+    billable_capacity: Decimal
+    contract_cost_rate: Decimal
+    cost_rate: Decimal
+
+    @property
+    def underutilization_rate(self) -> Decimal:
+        """Стоимость недозагрузки на биллируемый час: c − ĉ."""
+        return self.cost_rate - self.contract_cost_rate
+
+
+def employee_cost(employee: Employee) -> EmployeeCost:
+    """Себестоимость контрактного и биллируемого часа сотрудника."""
+    monthly = employee.compensation.monthly_cost
+    hours = employee.contract_hours_per_month
+    capacity = hours * employee.target_utilization
     return EmployeeCost(
-        gross_salary=payroll.gross_salary,
-        employer_taxes=employer_taxes,
-        total_monthly_cost=total,
-        cost_rate_per_hour=total / payroll.contract_hours_per_month,
+        monthly_cost=monthly,
+        contract_hours=hours,
+        billable_capacity=capacity,
+        contract_cost_rate=monthly / hours,
+        cost_rate=monthly / capacity,
     )
 
 
-def direct_labor(lines: Iterable[EstimateLine]) -> Decimal:
-    """Прямые трудозатраты: Σ себестоимость часа × часы."""
-    return decimal_sum(line.labor_cost for line in lines)
+def billable_capacity(team: Iterable[Employee]) -> Decimal:
+    """Биллируемая ёмкость фирмы в месяц: Σ H_i × u_i."""
+    return decimal_sum(
+        employee.contract_hours_per_month * employee.target_utilization for employee in team
+    )
 
 
 def monthly_amount(overhead: Overhead) -> Decimal:
@@ -67,38 +82,26 @@ def monthly_amount(overhead: Overhead) -> Decimal:
             assert_never(overhead.period)
 
 
-def total_overheads_monthly(overheads: Iterable[Overhead]) -> Decimal:
-    """Накладные фирмы за месяц.
+def total_overheads_monthly(
+    overheads: Iterable[Overhead], currency: Currency, rates: ExchangeRates
+) -> Decimal:
+    """Накладные фирмы за месяц в валюте currency.
 
-    KNOWN-BUG L-06 → фаза 2: суммы в RUB, KZT и USD складываются без конвертации.
+    Raises:
+        CurrencyConversionError: Накладной расход в валюте, для которой нет курса.
     """
-    return decimal_sum(monthly_amount(overhead) for overhead in overheads)
+    return decimal_sum(
+        convert(monthly_amount(item), item.currency, currency, rates) for item in overheads
+    )
 
 
-def overhead_rate(overheads: Iterable[Overhead], billable_hours_per_month: Decimal) -> Decimal:
-    """Ставка накладных на биллируемый час: накладные за месяц / биллируемые часы.
+def overhead_rate(firm: Firm, currency: Currency) -> Decimal:
+    """Ставка накладных ρ на биллируемый час в валюте currency; 0, если ёмкости нет.
 
-    Возвращает 0, если часов нет.
+    Raises:
+        CurrencyConversionError: Накладной расход в валюте, для которой нет курса.
     """
-    if billable_hours_per_month <= 0:
+    capacity = billable_capacity(firm.team)
+    if capacity <= 0:
         return ZERO
-    return total_overheads_monthly(overheads) / billable_hours_per_month
-
-
-def allocate_overheads(rate: Decimal, hours: Decimal) -> Decimal:
-    """Накладные, относимые на проект: ставка накладных × часы проекта.
-
-    В v0.3 метод назывался `get_overheads_allocated(direct_costs)`, хотя
-    получал часы (L-07). Возвращает 0 при неположительных часах.
-    """
-    if hours <= 0:
-        return ZERO
-    return rate * hours
-
-
-def disbursements_total(disbursements: Iterable[Disbursement], kind: DisbursementKind) -> Decimal:
-    """Сумма прямых расходов проекта одного типа.
-
-    KNOWN-BUG L-06 → фаза 2: валюты складываются без конвертации.
-    """
-    return decimal_sum(item.amount for item in disbursements if item.kind == kind)
+    return total_overheads_monthly(firm.overheads, currency, firm.exchange_rates) / capacity

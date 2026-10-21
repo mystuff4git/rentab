@@ -1,0 +1,139 @@
+{
+  "estimate": {
+    "blended_rate": 41823.529412,
+    "currency": "KZT",
+    "dashboard": {
+      "effective_tax_rate_pct": 3.333333,
+      "margin_pct": 30.0,
+      "profitability": "profitable",
+      "underutilization_share_pct": 35.0
+    },
+    "direct_labor": 586153.846154,
+    "disbursements": [
+      {
+        "amount": 150000.0,
+        "kind": "billable",
+        "name": "Пошлины Казпатента: ТЗ, 1 класс МКТУ",
+        "original": "150000.0 KZT"
+      },
+      {
+        "amount": 18000.0,
+        "kind": "own",
+        "name": "Курьерская доставка оригиналов",
+        "original": "18000.0 KZT"
+      },
+      {
+        "amount": 42000.0,
+        "kind": "own",
+        "name": "Нотариальный перевод доверенности",
+        "original": "42000.0 KZT"
+      }
+    ],
+    "disbursements_billed": 150000.0,
+    "disbursements_own": 60000.0,
+    "leverage": 1.833333,
+    "lines": [
+      {
+        "billing_rate": 36000.0,
+        "contract_cost_rate": 21000.0,
+        "cost_rate": 32307.692308,
+        "employee": "Ким В.",
+        "hours": 6.0,
+        "stage": "Поиск по базам и анализ охраноспособности"
+      },
+      {
+        "billing_rate": 60000.0,
+        "contract_cost_rate": 33000.0,
+        "cost_rate": 50769.230769,
+        "employee": "Сапарова А.",
+        "hours": 4.0,
+        "stage": "Подготовка и подача заявки"
+      },
+      {
+        "billing_rate": 90000.0,
+        "contract_cost_rate": 48000.0,
+        "cost_rate": 73846.153846,
+        "employee": "Ахметов Д.",
+        "hours": 2.0,
+        "stage": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 15000.0,
+        "contract_cost_rate": 5400.0,
+        "cost_rate": 8307.692308,
+        "employee": "Нурланова Ж.",
+        "hours": 5.0,
+        "stage": "Сопровождение регистрации"
+      }
+    ],
+    "margin": 0.3,
+    "min_tax": 0.0,
+    "nne": 306531.593407,
+    "overhead_rate": 2060.43956,
+    "overheads_alloc": 35027.472527,
+    "pricing": "fixed",
+    "regime_label": "ОУР — ИП (ИПН) 10%",
+    "regular_tax": 34059.065934,
+    "revenue": 1021771.978022,
+    "shadow_value": 711000.0,
+    "stages": [
+      {
+        "costs": 224436.63931,
+        "flag": "yellow",
+        "hours": 6.0,
+        "margin": 0.249274,
+        "nne": 77377.590764,
+        "own": 18227.848101,
+        "revenue": 310411.740159,
+        "shadow_value": 216000.0,
+        "stage": "Поиск по базам и анализ охраноспособности",
+        "tax": 8597.510085
+      },
+      {
+        "costs": 231571.845876,
+        "flag": "yellow",
+        "hours": 4.0,
+        "margin": 0.295728,
+        "nne": 101997.07887,
+        "own": 20253.164557,
+        "revenue": 344901.93351,
+        "shadow_value": 240000.0,
+        "stage": "Подготовка и подача заявки",
+        "tax": 11333.008763
+      },
+      {
+        "costs": 167003.060231,
+        "flag": "green",
+        "hours": 2.0,
+        "margin": 0.318955,
+        "nne": 82506.050911,
+        "own": 15189.873418,
+        "revenue": 258676.450132,
+        "shadow_value": 180000.0,
+        "stage": "Ответ на уведомление экспертизы",
+        "tax": 9167.33899
+      },
+      {
+        "costs": 58169.773265,
+        "flag": "green",
+        "hours": 5.0,
+        "margin": 0.414271,
+        "nne": 44650.872861,
+        "own": 6329.113924,
+        "revenue": 107781.854222,
+        "shadow_value": 75000.0,
+        "stage": "Сопровождение регистрации",
+        "tax": 4961.208096
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 34059.065934,
+    "total_client": 1171771.978022,
+    "total_costs": 681181.318681,
+    "total_hours": 17.0,
+    "underutilization_cost": 205153.846154,
+    "unresolved": [],
+    "vat": 0.0
+  },
+  "warnings": []
+}

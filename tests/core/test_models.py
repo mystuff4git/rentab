@@ -1,4 +1,4 @@
-"""Модели ядра: проверка входа, дефолты v0.3, юрисдикция."""
+"""Модели ядра: проверка входа, значения по умолчанию, юрисдикция, проект."""
 
 from __future__ import annotations
 
@@ -11,10 +11,12 @@ from rentab_core.models import (
     DEFAULT_KZ_TAX_PROFILE,
     DEFAULT_RF_TAX_PROFILE,
     AusnProfile,
+    CappedPricing,
     Country,
     Disbursement,
     DisbursementKind,
     Employee,
+    ExchangeRates,
     Firm,
     FixedPricing,
     HourlyPricing,
@@ -22,55 +24,90 @@ from rentab_core.models import (
     JurisdictionMode,
     KzOurProfile,
     KzVat,
+    MonthlyCost,
     NpdProfile,
     OsnoProfile,
     Overhead,
-    Payroll,
     PricingModel,
+    Project,
     Role,
+    Salary,
     Scenario,
     TaxProfile,
     UsnProfile,
+    VatMode,
 )
 from rentab_core.money import Currency
-from tests.core.factories import basic_scenario, d
+from tests.core.factories import basic_scenario, d, disbursement, stage
+
+ZERO_COST = {"kind": "monthly", "amount": 0}
 
 
 def test_float_input_becomes_exact_decimal() -> None:
     # Так приходят данные из JSON и виджетов Streamlit.
     employee = Employee.model_validate(
-        {"name": "x", "role": "partner", "billing_rate": 0.1, "cost_rate": 15000.0}
+        {
+            "name": "x",
+            "role": "partner",
+            "billing_rate": 0.1,
+            "compensation": {
+                "kind": "salary",
+                "gross_salary": 15000.0,
+                "employer_contribution_rate": 0.3,
+            },
+        }
     )
     assert employee.billing_rate == Decimal("0.1")
-    assert employee.cost_rate == Decimal("15000.0")
+    assert isinstance(employee.compensation, Salary)
+    assert employee.compensation.employer_contribution_rate == Decimal("0.3")
+
+
+def test_employee_defaults() -> None:
+    employee = Employee(name="x", role=Role.PARTNER, compensation=MonthlyCost(amount=d(1)))
+    assert employee.currency == Currency.RUB
+    assert employee.contract_hours_per_month == Decimal(168)
+    assert employee.target_utilization == Decimal("0.65")
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
         {"billing_rate": -1},
-        {"cost_rate": "NaN"},
-        {"cost_rate": "Infinity"},
+        {"billing_rate": "NaN"},
+        {"compensation": {"kind": "monthly", "amount": "Infinity"}},
+        {"compensation": {"kind": "bonus", "amount": 1}},
         {"role": "Партнёр"},  # подпись, а не значение перечисления
+        {"target_utilization": 0},
+        {"target_utilization": "1.01"},
+        {"contract_hours_per_month": 0},
+        {"currency": "EUR"},
+        {"cost_rate": 100},  # себестоимость часа не вводится, а выводится
         {"unknown_field": 1},
     ],
 )
 def test_employee_rejects_invalid_input(kwargs: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        Employee.model_validate({"name": "x", "role": "partner", **kwargs})
+        Employee.model_validate(
+            {"name": "x", "role": "partner", "compensation": ZERO_COST, **kwargs}
+        )
+
+
+def test_employee_requires_compensation() -> None:
+    with pytest.raises(ValidationError):
+        Employee.model_validate({"name": "x", "role": "partner"})
+
+
+def test_compensation_monthly_cost() -> None:
+    salary = Salary(gross_salary=d(100_000), employer_contribution_rate=d("0.3"))
+    assert salary.employer_contributions == d(30_000)
+    assert salary.monthly_cost == d(130_000)
+    assert MonthlyCost(amount=d(400_000)).monthly_cost == d(400_000)
 
 
 def test_models_are_frozen() -> None:
-    employee = Employee(name="x", role=Role.PARTNER)
+    employee = Employee(name="x", role=Role.PARTNER, compensation=MonthlyCost(amount=d(1)))
     with pytest.raises(ValidationError):
         employee.name = "y"
-
-
-def test_payroll_defaults_and_bounds() -> None:
-    payroll = Payroll(gross_salary=d(100_000), employer_contribution_rate=d("0.3"))
-    assert payroll.contract_hours_per_month == Decimal(168)
-    with pytest.raises(ValidationError):
-        Payroll(gross_salary=d(1), contract_hours_per_month=d(0), employer_contribution_rate=d(0))
 
 
 def test_overhead_and_disbursement_validation() -> None:
@@ -83,21 +120,67 @@ def test_overhead_and_disbursement_validation() -> None:
     item = Disbursement(name="Пошлина", kind=DisbursementKind.BILLABLE, amount=d(100))
     assert item.billable
     assert item.currency == Currency.RUB
+    assert item.stage is None
     assert not Disbursement(name="Курьер", kind=DisbursementKind.OWN, amount=d(1)).billable
+    # «Прочее» v0.3 — собственный расход, отдельной категории больше нет (L-12).
+    with pytest.raises(ValidationError):
+        Disbursement.model_validate({"name": "x", "kind": "extra", "amount": 1})
+
+
+def test_exchange_rates_must_be_positive() -> None:
+    assert ExchangeRates() == ExchangeRates(rub_per_kzt=None, rub_per_usd=None)
+    with pytest.raises(ValidationError):
+        ExchangeRates(rub_per_kzt=d(0))
+    with pytest.raises(ValidationError):
+        ExchangeRates(rub_per_usd=d(-1))
 
 
 @pytest.mark.parametrize("margin", ["-0.01", "1", "1.5"])
-def test_fixed_pricing_margin_must_be_in_unit_interval(margin: str) -> None:
+def test_target_margin_must_be_in_unit_interval(margin: str) -> None:
     with pytest.raises(ValidationError):
-        FixedPricing(target_margin=Decimal(margin))
+        Project(target_margin=Decimal(margin))
+
+
+def test_project_defaults() -> None:
+    project = Project()
+    assert project.pricing == HourlyPricing()
+    assert project.target_margin == Decimal("0.30")
+    assert project.vat_mode == VatMode.ON_TOP
 
 
 def test_pricing_model_is_discriminated_by_kind() -> None:
     adapter: TypeAdapter[PricingModel] = TypeAdapter(PricingModel)
     assert adapter.validate_python({"kind": "hourly"}) == HourlyPricing()
-    fixed = adapter.validate_python({"kind": "fixed", "target_margin": "0.25"})
-    assert fixed == FixedPricing(target_margin=Decimal("0.25"))
-    assert FixedPricing().target_margin == Decimal("0.30")
+    assert adapter.validate_python({"kind": "capped", "cap": "90000"}) == CappedPricing(
+        cap=d(90_000)
+    )
+    assert adapter.validate_python({"kind": "fixed"}) == FixedPricing()
+    agreed = adapter.validate_python({"kind": "fixed", "price": 300000})
+    assert agreed == FixedPricing(price=d(300_000))
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"kind": "capped", "cap": 0})
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"kind": "fixed", "price": 0})
+    with pytest.raises(ValidationError):
+        adapter.validate_python({"kind": "fixed", "target_margin": "0.3"})
+
+
+def test_stage_names_are_unique() -> None:
+    # Пирамида — один этап с несколькими назначениями, а не одноимённые этапы (L-05).
+    with pytest.raises(ValidationError, match="повторяются: Ответ"):
+        Project(stages=(stage("Ответ", ("Петрова", 10)), stage("Ответ", ("Иванов", 2))))
+
+
+def test_disbursement_stage_must_exist() -> None:
+    Project(
+        stages=(stage("Подача", ("Петрова", 1)),),
+        disbursements=(disbursement(DisbursementKind.OWN, 1, stage="Подача"),),
+    )
+    with pytest.raises(ValidationError, match="неизвестному этапу «Ответ»"):
+        Project(
+            stages=(stage("Подача", ("Петрова", 1)),),
+            disbursements=(disbursement(DisbursementKind.OWN, 1, stage="Ответ"),),
+        )
 
 
 @pytest.mark.parametrize(
@@ -154,22 +237,27 @@ def test_jurisdiction_uses_configured_profiles() -> None:
     assert jurisdiction.tax_profile(Country.KZ) == KzOurProfile(vat=KzVat.VAT_16)
     with pytest.raises(ValidationError):
         Jurisdiction.model_validate({"rf": {"regime": "our"}})
+    # Курс переехал из юрисдикции в Firm.exchange_rates.
     with pytest.raises(ValidationError):
-        Jurisdiction(exchange_rate_rub_per_kzt=d(0))
+        Jurisdiction.model_validate({"exchange_rate_rub_per_kzt": "0.18"})
 
 
 def test_team_by_name_last_duplicate_wins() -> None:
-    first = Employee(name="Иванов", role=Role.PARTNER)
-    second = Employee(name="Иванов", role=Role.INTERN)
+    first = Employee(name="Иванов", role=Role.PARTNER, compensation=MonthlyCost(amount=d(1)))
+    second = Employee(name="Иванов", role=Role.INTERN, compensation=MonthlyCost(amount=d(2)))
     assert Firm(team=(first, second)).team_by_name() == {"Иванов": second}
 
 
-def test_firm_billable_hours_must_be_positive() -> None:
+def test_firm_has_no_separate_billable_hours() -> None:
+    # Ёмкость фирмы выводится из команды (L-01).
     with pytest.raises(ValidationError):
-        Firm(billable_hours_per_month=d(0))
+        Firm.model_validate({"billable_hours_per_month": 160})
 
 
 def test_scenario_round_trips_through_json() -> None:
-    scenario = basic_scenario()
+    scenario = basic_scenario(
+        CappedPricing(cap=d(100_000)),
+        disbursements=(disbursement(DisbursementKind.OWN, 3_000, stage="Анализ"),),
+    )
     restored = Scenario.model_validate_json(scenario.model_dump_json())
     assert restored == scenario

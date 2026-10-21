@@ -1,17 +1,17 @@
-"""Смета в XLSX (перенос `modules/estimate_export.py` v0.3).
+"""Смета в XLSX (оформление v0.3, цифры — по методологии фазы 2).
 
 Файл содержит два листа:
 
-1. «Смета» — документ для клиента. Для почасовой модели — этапы с часами
-   и ставками, для фикс-прайса — этапы без часов и ставок.
-2. «Внутренний расчёт» — показатели для фирмы: издержки, налог, NNE, маржа;
-   для фикс-прайса ещё и анализ этапов со светофором.
+1. «Смета» — документ для клиента. Для почасовой модели и модели с потолком —
+   строки с часами и ставками, для фиксированной цены — этапы без часов и
+   ставок с ценой этапа по теневой стоимости. Суммы — без НДС, затем строка
+   НДС, возмещаемые расходы и «Итого к оплате» = R + НДС + D.
+2. «Внутренний расчёт» — показатели для фирмы: издержки, налог, NNE, маржа и
+   анализ этапов со светофором.
 
 Числа пишутся без округления, формат ячейки показывает целые; проценты и
-рычаг округляются до 0,1 и 0,01 («половина вверх»).
-
-KNOWN-BUG L-02 → фаза 7: в смете нет строки НДС, «Итого к оплате» = услуги + пошлины.
-KNOWN-BUG L-17 → фаза 7: цена этапа в смете фикс-прайса = доля фикс-цены по часам.
+рычаг округляются до 0,1 и 0,01 («половина вверх»). Оформление КП и живые
+формулы Excel — фаза 7.
 """
 
 from __future__ import annotations
@@ -26,9 +26,10 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rentab_core.models import ROLE_LABELS, Disbursement
-from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, ZERO, decimal_sum, round_to
-from rentab_core.results import Estimate, FixedPriceEstimate, HourlyEstimate, StageFlag
+from rentab_core.models import ROLE_LABELS, FixedPricing, VatMode
+from rentab_core.money import CURRENCY_SYMBOLS, ONE, PERCENT, round_to
+from rentab_core.results import DisbursementLine, Estimate, StageFlag
+from rentab_core.tax.labels import percent
 
 CellValue = str | int | float | None
 
@@ -65,7 +66,8 @@ UNTITLED_PROJECT = "Без названия"
 DATE_FORMAT = "%d.%m.%Y"
 VALIDITY_NOTE = "Смета действительна 30 дней с даты составления."
 FIXED_PRICE_NOTE = "* Стоимость работ зафиксирована и не зависит от фактически затраченных часов."
-DISBURSEMENTS_TITLE = "Перевыставляемые расходы (пошлины и иные платежи)"
+DISBURSEMENTS_TITLE = "Возмещаемые расходы (пошлины и иные платежи)"
+NO_VAT_NOTE = "НДС не облагается."
 
 PERCENT_QUANTUM = Decimal("0.1")
 LEVERAGE_QUANTUM = Decimal("0.01")
@@ -178,7 +180,7 @@ def _write_meta(
     return row + 1
 
 
-def _billable(estimate: Estimate) -> list[Disbursement]:
+def _billable(estimate: Estimate) -> list[DisbursementLine]:
     return [item for item in estimate.disbursements if item.billable]
 
 
@@ -197,7 +199,7 @@ def _write_disbursements(
         row = _write_row(ws, row, values, number_columns)
     totals: list[CellValue] = [
         "",
-        "Итого перевыставляемых расходов",
+        "Итого возмещаемых расходов",
         *padding,
         _number(estimate.disbursements_billed),
     ]
@@ -208,16 +210,59 @@ def _project_title(estimate: Estimate) -> str:
     return estimate.project_name.strip() or UNTITLED_PROJECT
 
 
+def _net_factor(estimate: Estimate) -> Decimal:
+    """Множитель «цена в режиме проекта → без НДС» для ставок в смете."""
+    if estimate.vat_mode == VatMode.INCLUDED:
+        return ONE / (ONE + estimate.tax.terms.vat_rate)
+    return ONE
+
+
+def _write_totals(
+    ws: Worksheet,
+    row: int,
+    estimate: Estimate,
+    n_cols: int,
+    number_columns: frozenset[int],
+    services_label: str,
+) -> int:
+    """Итог за услуги без НДС, НДС, возмещаемые расходы и «Итого к оплате»."""
+    padding: list[CellValue] = [""] * (n_cols - 3)
+    row = _write_row(
+        ws,
+        row,
+        ["", services_label, *padding, _number(estimate.revenue)],
+        number_columns,
+        total=True,
+    )
+    vat_rate = estimate.tax.terms.vat_rate
+    if vat_rate > 0:
+        vat_label = f"НДС {percent(vat_rate)}%"
+        row = _write_row(ws, row, ["", vat_label, *padding, _number(estimate.vat)], number_columns)
+    else:
+        _write_plain(ws, row, 2, NO_VAT_NOTE)
+        row += 1
+    row = _write_disbursements(ws, row, estimate, n_cols, number_columns)
+    row += 1
+    return _write_row(
+        ws,
+        row,
+        ["", "Итого к оплате", *padding, _number(estimate.total_client)],
+        number_columns,
+        total=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Лист «Смета»
 # ---------------------------------------------------------------------------
 def _client_sheet_hourly(
-    ws: Worksheet, estimate: HourlyEstimate, firm_name: str, issue_date: dt.date
+    ws: Worksheet, estimate: Estimate, firm_name: str, issue_date: dt.date
 ) -> None:
     symbol = CURRENCY_SYMBOLS[estimate.currency]
     headers = ["№", "Этап", "Исполнитель", "Часы", f"Ставка, {symbol}/ч", f"Стоимость, {symbol}"]
     n_cols = len(headers)
     number_columns = frozenset({4, 5, 6})
+    net = _net_factor(estimate)
 
     row = _write_document_header(ws, 1, f"Смета по проекту: {_project_title(estimate)}", n_cols)
     row = _write_meta(ws, row, estimate, firm_name, issue_date)
@@ -228,29 +273,30 @@ def _client_sheet_hourly(
             line.stage_name,
             f"{line.employee_name} ({ROLE_LABELS[line.role]})",
             _number(line.hours),
-            _number(line.billing_rate),
-            _number(line.revenue),
+            _number(line.billing_rate * net),
+            _number(line.shadow_value * net),
         ]
         row = _write_row(ws, row, values, number_columns)
-    services = decimal_sum(line.revenue for line in estimate.lines)
-    row = _write_row(
-        ws, row, ["", "Итого за услуги", "", "", "", _number(services)], number_columns, total=True
-    )
-    row = _write_disbursements(ws, row, estimate, n_cols, number_columns)
-    row += 1
-    row = _write_row(
-        ws,
-        row,
-        ["", "Итого к оплате", "", "", "", _number(estimate.total_client)],
-        number_columns,
-        total=True,
-    )
+    if estimate.write_off > 0:
+        row = _write_row(
+            ws,
+            row,
+            ["", "Стоимость по ставкам", "", "", "", _number(estimate.shadow_value_net)],
+            number_columns,
+        )
+        row = _write_row(
+            ws,
+            row,
+            ["", "Скидка до потолка стоимости", "", "", "", -_number(estimate.write_off)],
+            number_columns,
+        )
+    row = _write_totals(ws, row, estimate, n_cols, number_columns, "Итого за услуги без НДС")
     _write_plain(ws, row + 2, 1, VALIDITY_NOTE)
     _autosize_columns(ws, n_cols)
 
 
 def _client_sheet_fixed(
-    ws: Worksheet, estimate: FixedPriceEstimate, firm_name: str, issue_date: dt.date
+    ws: Worksheet, estimate: Estimate, firm_name: str, issue_date: dt.date
 ) -> None:
     symbol = CURRENCY_SYMBOLS[estimate.currency]
     headers = ["№", "Описание", f"Стоимость, {symbol}"]
@@ -262,31 +308,20 @@ def _client_sheet_fixed(
     row = _write_table_header(ws, row, headers)
     if estimate.stages:
         for idx, stage in enumerate(estimate.stages, start=1):
-            values: list[CellValue] = [idx, stage.stage_name, _number(stage.revenue_share)]
+            values: list[CellValue] = [idx, stage.stage_name, _number(stage.revenue)]
             row = _write_row(ws, row, values, number_columns)
     else:
         row = _write_row(
             ws,
             row,
-            [1, "Услуги по проекту (фиксированная стоимость)", _number(estimate.fixed_price)],
+            [1, "Услуги по проекту (фиксированная стоимость)", _number(estimate.revenue)],
             number_columns,
         )
-    row = _write_row(
-        ws,
-        row,
-        ["", "Фиксированная стоимость работ", _number(estimate.fixed_price)],
-        number_columns,
-        total=True,
+    row = _write_totals(
+        ws, row, estimate, n_cols, number_columns, "Фиксированная стоимость работ без НДС"
     )
-    row += 1
-    _write_plain(ws, row, 1, FIXED_PRICE_NOTE)
-    row += 1
-    row = _write_disbursements(ws, row, estimate, n_cols, number_columns)
-    row += 1
-    row = _write_row(
-        ws, row, ["", "Итого к оплате", _number(estimate.total_client)], number_columns, total=True
-    )
-    _write_plain(ws, row + 2, 1, VALIDITY_NOTE)
+    _write_plain(ws, row + 1, 1, FIXED_PRICE_NOTE)
+    _write_plain(ws, row + 3, 1, VALIDITY_NOTE)
     _autosize_columns(ws, n_cols)
 
 
@@ -310,47 +345,36 @@ def _write_indicators(ws: Worksheet, title: str, rows: Sequence[IndicatorRow]) -
     return row
 
 
-def _internal_sheet_hourly(ws: Worksheet, estimate: HourlyEstimate) -> None:
+def _pct(value: Decimal) -> float:
+    return _rounded(value * PERCENT, PERCENT_QUANTUM)
+
+
+def _internal_sheet(ws: Worksheet, estimate: Estimate) -> None:
     symbol = CURRENCY_SYMBOLS[estimate.currency]
-    gross = estimate.gross_revenue
-    margin_pct = estimate.nne / gross * PERCENT if gross else ZERO
     rows: list[IndicatorRow] = [
-        (f"Выручка за услуги, {symbol}", _number(gross), True),
-        (f"Перевыставляемые расходы, {symbol}", _number(estimate.disbursements_billed), True),
-        (f"Итоговый счёт клиенту, {symbol}", _number(estimate.total_client), True),
+        (f"Выручка за услуги без НДС, {symbol}", _number(estimate.revenue), True),
+        (f"НДС (сверху), {symbol}", _number(estimate.vat), True),
+        (f"Возмещаемые расходы, {symbol}", _number(estimate.disbursements_billed), True),
+        (f"Итого к оплате клиентом, {symbol}", _number(estimate.total_client), True),
         (f"Прямые трудозатраты, {symbol}", _number(estimate.direct_labor), True),
+        (
+            f"в т. ч. стоимость недозагрузки, {symbol}",
+            _number(estimate.underutilization_cost),
+            True,
+        ),
         (f"Накладные (распределённые), {symbol}", _number(estimate.overheads_alloc), True),
-        (f"Расходы за счёт фирмы, {symbol}", _number(estimate.disbursements_own), True),
-        (f"Налог, {symbol}", _number(estimate.tax.total_tax), True),
+        (f"Собственные расходы, {symbol}", _number(estimate.disbursements_own), True),
+        (f"Все издержки проекта, {symbol}", _number(estimate.total_costs), True),
+        (f"Налог на доход или прибыль, {symbol}", _number(estimate.tax.tax), True),
         (f"Чистая прибыль (NNE), {symbol}", _number(estimate.nne), True),
-        ("Маржа, %", _rounded(margin_pct, PERCENT_QUANTUM), False),
+        ("Маржа, %", _pct(estimate.margin), False),
+        ("Целевая маржа, %", _pct(estimate.target_margin), False),
+        (f"Ставка накладных, {symbol}/ч", _number(estimate.overhead_rate), True),
         (f"Средневзвешенная ставка, {symbol}/ч", _number(estimate.blended_rate), True),
         ("Коэффициент рычага", _rounded(estimate.leverage, LEVERAGE_QUANTUM), False),
         ("Налоговый режим", estimate.regime_label, False),
     ]
-    _write_indicators(ws, "Внутренний расчёт проекта", rows)
-    _autosize_columns(ws, 2)
-
-
-def _internal_sheet_fixed(ws: Worksheet, estimate: FixedPriceEstimate) -> None:
-    symbol = CURRENCY_SYMBOLS[estimate.currency]
-    rows: list[IndicatorRow] = [
-        (f"Фиксированная цена, {symbol}", _number(estimate.fixed_price), True),
-        (f"Все издержки проекта, {symbol}", _number(estimate.total_costs), True),
-        (f"Прямые трудозатраты, {symbol}", _number(estimate.direct_labor), True),
-        (f"Накладные (распределённые), {symbol}", _number(estimate.overheads_alloc), True),
-        (f"Расходы за счёт фирмы, {symbol}", _number(estimate.disbursements_own), True),
-        (f"Налог, {symbol}", _number(estimate.tax.total_tax), True),
-        (f"Чистая прибыль (NNE), {symbol}", _number(estimate.nne), True),
-        ("Целевая маржа, %", _rounded(estimate.target_margin * PERCENT, PERCENT_QUANTUM), False),
-        (
-            "Фактическая маржа, %",
-            _rounded(estimate.actual_margin * PERCENT, PERCENT_QUANTUM),
-            False,
-        ),
-        ("Налоговый режим", estimate.regime_label, False),
-    ]
-    row = _write_indicators(ws, "Внутренний расчёт проекта (фикс-прайс)", rows)
+    row = _write_indicators(ws, "Внутренний расчёт проекта", rows)
     if not estimate.stages:
         _autosize_columns(ws, 2)
         return
@@ -359,18 +383,25 @@ def _internal_sheet_fixed(ws: Worksheet, estimate: FixedPriceEstimate) -> None:
     _write_plain(ws, row, 1, "Анализ этапов", bold=True)
     headers = [
         "Этап",
+        "Часы",
+        f"Выручка этапа, {symbol}",
         f"Издержки этапа, {symbol}",
-        f"Доля выручки, {symbol}",
+        f"Налог этапа, {symbol}",
+        f"NNE этапа, {symbol}",
         "Маржа, %",
         "Статус",
     ]
+    money_columns = frozenset({3, 4, 5, 6})
     row = _write_table_header(ws, row + 1, headers)
     for stage in estimate.stages:
         values: list[CellValue] = [
             stage.stage_name,
+            _number(stage.hours),
+            _number(stage.revenue),
             _number(stage.costs),
-            _number(stage.revenue_share),
-            _rounded(stage.margin * PERCENT, PERCENT_QUANTUM),
+            _number(stage.tax),
+            _number(stage.nne),
+            _pct(stage.margin),
             FLAG_LABELS[stage.flag],
         ]
         fill = _solid_fill(FLAG_FILL_COLORS[stage.flag])
@@ -378,7 +409,7 @@ def _internal_sheet_fixed(ws: Worksheet, estimate: FixedPriceEstimate) -> None:
             cell = ws.cell(row=row, column=col, value=value)
             cell.font = _font()
             cell.fill = fill
-            if col in (2, 3):
+            if col in money_columns:
                 cell.number_format = NUMBER_FORMAT_INT
                 cell.alignment = Alignment(horizontal="right")
         row += 1
@@ -405,12 +436,11 @@ def estimate_xlsx(estimate: Estimate, *, firm_name: str = "", issue_date: dt.dat
     client_sheet.title = CLIENT_SHEET_TITLE
     internal_sheet = workbook.create_sheet(INTERNAL_SHEET_TITLE)
 
-    if isinstance(estimate, FixedPriceEstimate):
+    if isinstance(estimate.pricing, FixedPricing):
         _client_sheet_fixed(client_sheet, estimate, firm_name, issue_date)
-        _internal_sheet_fixed(internal_sheet, estimate)
     else:
         _client_sheet_hourly(client_sheet, estimate, firm_name, issue_date)
-        _internal_sheet_hourly(internal_sheet, estimate)
+    _internal_sheet(internal_sheet, estimate)
 
     buffer = io.BytesIO()
     workbook.save(buffer)
