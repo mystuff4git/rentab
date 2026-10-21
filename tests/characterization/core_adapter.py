@@ -124,6 +124,10 @@ def jurisdiction_from_params(params: LegacyDict) -> Jurisdiction:
     """`session_state["jurisdiction_params"]` v0.3 → Jurisdiction."""
     rf = tax_profile_from_params(params.get("rf"))
     kz = tax_profile_from_params(params.get("kz"))
+    if isinstance(rf, KzOurProfile):
+        raise LegacyInputError("В параметрах РФ указан режим РК")
+    if kz is not None and not isinstance(kz, KzOurProfile):
+        raise LegacyInputError("В параметрах РК указан режим РФ")
     rate = params.get("exchange_rate_rub_per_kzt")
     return Jurisdiction(
         mode=MODE_BY_LEGACY[params.get("jurisdiction", "RF")],
