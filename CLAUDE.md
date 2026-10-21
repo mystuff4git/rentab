@@ -11,7 +11,9 @@ Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl, pyth
 
 ## Архитектура
 - `src/rentab_core/` — чистое ядро, НЕ импортирует streamlit. Вся математика здесь.
-- `app/` — Streamlit; только вызывает ядро и рисует.
+- `app/` — Streamlit; только вызывает ядро и рисует. Модели ядра собираются из
+  `st.session_state` в `app/ui/state.py`, русские подписи — в `app/ui/labels.py`.
+  Точка входа — `app/Home.py`; страницы импортируют `ui.*` (Streamlit кладёт `app/` в sys.path).
 - `src/rentab_core/rates/*.yaml` — ЕДИНСТВЕННОЕ место ставок; у каждой: value, effective_from,
   source_url, needs_review.
 - `docs/methodology.md` — источник истины по формулам. Код и тесты соответствуют ему; при
@@ -35,19 +37,22 @@ NNE = R − C − Tax;  m = NNE / R
 - Никаких магических чисел: ставки в YAML, пороги и дефолты — именованные константы.
 - НИКАКОЙ записи пользовательских данных на сервер. Только импорт/экспорт файлов пользователем.
 - Ставки не выдумывать. Нет первоисточника → needs_review: true и сообщить.
-- Streamlit: `width='stretch'` вместо `use_container_width`.
+- Streamlit: `width='stretch'` вместо `use_container_width`. Значения виджетов меняются в
+  колбэках (`on_click`), а не после создания виджета; вход `st.data_editor` не
+  пересобирается из его же результата (иначе правки теряются, L-21).
 - Перед PR: ruff, mypy, pytest зелёные; для UI — скриншоты через Playwright.
 - Одна фаза = одна ветка = один PR. Фазы описаны в docs/ROADMAP.md.
 
 ## Команды
 ```bash
-uv sync                          # окружение по uv.lock (группы dev и legacy)
+uv sync                          # окружение по uv.lock (группы dev, legacy и app)
 uv run ruff check                # линтер
 uv run ruff format               # форматирование (в CI — ruff format --check)
 uv run mypy                      # типы (strict)
 uv run pytest                    # все тесты + покрытие ядра (порог 90%)
 uv run pytest --no-cov -k slide3 # быстрый прогон части тестов
 uv run pytest --update-snapshots # перезаписать снимки characterization — только осознанно
+uv run streamlit run app/Home.py # приложение (конфиг — .streamlit/config.toml в корне)
 ```
 
 ## legacy/ и characterization-тесты
@@ -56,4 +61,10 @@ uv run pytest --update-snapshots # перезаписать снимки charact
 - `tests/characterization/` фиксирует выходы v0.3: сценарии в `scenarios/*.json`,
   снимки в `snapshots/`. Изменение снимка = изменение цифр: в PR его объясняют
   ссылкой на `L-NN`. Тесты заведомо неверного поведения помечены `KNOWN-BUG L-NN → фаза N`.
+- Эквивалентность ядра и v0.3: `tests/characterization/core_adapter.py` (формат v0.3 ↔
+  модели ядра), `test_core_equivalence.py` (все снимки, допуск 1 коп.),
+  `test_core_vs_legacy.py` (случайные сценарии против живого v0.3). Ядро о формате v0.3
+  не знает. В фазе 2 расхождения со снимками — ожидаемые, каждое объясняется в PR.
+- Тесты ядра — `tests/core/`, smoke-тесты интерфейса — `tests/app/` (`streamlit.testing`,
+  запуск с `Home.py` и `switch_page`).
 - Архитектурные решения — `docs/adr/`.

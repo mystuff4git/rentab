@@ -30,19 +30,35 @@
 Нужен [uv](https://docs.astral.sh/uv/).
 
 ```bash
-uv sync           # окружение по uv.lock
-uv run pytest     # тесты
+uv sync                           # окружение по uv.lock
+uv run streamlit run app/Home.py  # приложение на http://localhost:8501
+uv run pytest                     # тесты
 uv run ruff check && uv run mypy
+```
+
+Ядро можно вызывать и без интерфейса:
+
+```python
+from rentab_core import Scenario, calculate_estimate, dashboard
+
+estimate = calculate_estimate(Scenario(firm=firm, project=project))
+print(estimate.nne, dashboard(estimate).profitability)
 ```
 
 Структура:
 
 ```
-src/rentab_core/   расчётное ядро (без зависимостей от UI)
-tests/             тесты; characterization/ фиксирует поведение v0.3
+src/rentab_core/   расчётное ядро (без зависимостей от UI): модели, налоги,
+                   ценообразование, аналитика, смета XLSX, реестр ставок
+app/               интерфейс на Streamlit; только вызывает ядро и рисует
+tests/             core/ — тесты ядра, characterization/ — поведение v0.3 и
+                   эквивалентность ядра, app/ — smoke-тесты интерфейса
 legacy/rentab_v03/ замороженная копия v0.3 — эталон для сравнения
-docs/              ROADMAP, аудит v0.3, ADR; позже — методология и проверка ставок
+docs/              ROADMAP, аудит v0.3, ADR, скриншоты; позже — методология
 ```
+
+Данные фирмы приложение хранит только в сессии браузера и ничего не пишет на
+диск сервера.
 
 Почему цифры v1.0 будут отличаться от v0.3, объясняет
 [docs/legacy_audit.md](docs/legacy_audit.md).
