@@ -36,8 +36,22 @@ USN_15 = UsnProfile(tax_object=UsnObject.INCOME_MINUS_EXPENSES)
     ("profile", "base", "rate", "min_rate", "vat_rate", "label"),
     [
         (UsnProfile(), TaxBase.INCOME, "0.06", "0", "0", "УСН income (6%)"),
-        (UsnProfile(vat=UsnVat.VAT_5), TaxBase.INCOME, "0.06", "0", "0.05", "УСН income (6%)"),
-        (UsnProfile(vat=UsnVat.VAT_7), TaxBase.INCOME, "0.06", "0", "0.07", "УСН income (6%)"),
+        (
+            UsnProfile(vat=UsnVat.VAT_5),
+            TaxBase.INCOME,
+            "0.06",
+            "0",
+            "0.05",
+            "УСН income (6%) + НДС 5%",
+        ),
+        (
+            UsnProfile(vat=UsnVat.VAT_7),
+            TaxBase.INCOME,
+            "0.06",
+            "0",
+            "0.07",
+            "УСН income (6%) + НДС 7%",
+        ),
         (USN_15, TaxBase.PROFIT, "0.15", "0.01", "0", "УСН income_minus_expenses (15%)"),
         (OsnoProfile(), TaxBase.PROFIT, "0.25", "0", "0.22", "ОСНО (прибыль 25% + НДС 22%)"),
         (

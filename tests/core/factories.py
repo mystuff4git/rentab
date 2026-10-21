@@ -25,7 +25,7 @@ from rentab_core.models import (
 from rentab_core.results import EstimateLine
 
 
-def d(value: str | int) -> Decimal:
+def d(value: Decimal | str | int) -> Decimal:
     """Короткая запись Decimal в тестах."""
     return Decimal(value)
 

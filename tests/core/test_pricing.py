@@ -140,7 +140,11 @@ def test_margin_outside_unit_interval(margin: str) -> None:
 @pytest.mark.parametrize(
     ("terms", "margin", "message"),
     [
-        (USN_6, "0.95", re.escape("Целевая маржа 95.0% недостижима при режиме «УСН income (6%)»")),
+        (
+            USN_6,
+            "0.95",
+            re.escape("Целевая маржа 95.0% недостижима при режиме «УСН income (6%) + НДС 5%»"),
+        ),
         # L-20: точная граница m* + t = 1 — всегда отказ.
         (USN_6, "0.94", re.escape("маржа + ставка налога = 100.0% ≥ 100%")),
         (USN_15, "0.85", re.escape("маржа + ставка налога = 100.0% ≥ 100%")),

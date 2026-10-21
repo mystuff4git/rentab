@@ -1,0 +1,60 @@
+{
+  "estimate": {
+    "blended_rate": 10000.0,
+    "currency": "RUB",
+    "dashboard": {
+      "effective_tax_rate_pct": 6.0,
+      "margin_pct": 2.058608,
+      "profitability": "profitable",
+      "underutilization_share_pct": 35.0
+    },
+    "direct_labor": 33846.153846,
+    "disbursements": [],
+    "disbursements_billed": 0.0,
+    "disbursements_own": 0.0,
+    "leverage": 0.0,
+    "lines": [
+      {
+        "billing_rate": 10000.0,
+        "contract_cost_rate": 5500.0,
+        "cost_rate": 8461.538462,
+        "employee": "Петрова",
+        "hours": 4.0,
+        "stage": "Подготовка и подача заявки"
+      }
+    ],
+    "margin": 0.020586,
+    "min_tax": 0.0,
+    "nne": 823.443223,
+    "overhead_rate": 732.600733,
+    "overheads_alloc": 2930.40293,
+    "pricing": "hourly",
+    "regime_label": "УСН income (6%)",
+    "regular_tax": 2400.0,
+    "revenue": 40000.0,
+    "shadow_value": 40000.0,
+    "stages": [
+      {
+        "costs": 36776.556777,
+        "flag": "yellow",
+        "hours": 4.0,
+        "margin": 0.020586,
+        "nne": 823.443223,
+        "own": 0.0,
+        "revenue": 40000.0,
+        "shadow_value": 40000.0,
+        "stage": "Подготовка и подача заявки",
+        "tax": 2400.0
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 2400.0,
+    "total_client": 40000.0,
+    "total_costs": 36776.556777,
+    "total_hours": 4.0,
+    "underutilization_cost": 11846.153846,
+    "unresolved": [],
+    "vat": 0.0
+  },
+  "warnings": []
+}

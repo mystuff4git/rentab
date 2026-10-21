@@ -49,6 +49,8 @@ def terms(profile: UsnProfile | AusnProfile | OsnoProfile | NpdProfile) -> TaxTe
             vat_rate = _rate(USN_VAT_KEYS[profile.vat]) if profile.vat != UsnVat.NONE else ZERO
             # KNOWN-BUG L-18 → фаза 6: в подпись попадает ключ объекта («УСН income (6%)»).
             label = f"УСН {profile.tax_object.value} ({percent(income_rate)}%)"
+            if vat_rate > 0:
+                label += f" + НДС {percent(vat_rate)}%"
             if profile.tax_object == UsnObject.INCOME:
                 return TaxTerms(
                     regime_label=label, base=TaxBase.INCOME, rate=income_rate, vat_rate=vat_rate
