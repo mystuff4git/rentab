@@ -15,7 +15,7 @@ def blended_rate(lines: Sequence[EstimateLine]) -> Decimal:
     total_hours = decimal_sum(line.hours for line in lines)
     if total_hours == 0:
         return ZERO
-    return decimal_sum(line.revenue for line in lines) / total_hours
+    return decimal_sum(line.shadow_value for line in lines) / total_hours
 
 
 def leverage(lines: Sequence[EstimateLine]) -> Decimal:

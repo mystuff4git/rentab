@@ -14,11 +14,13 @@ from rentab_core.rates import RateTable, load_rates, rate
 from rentab_core.reference import check_country, load_reference, parse_reference
 
 # Ставки v0.3 (legacy/rentab_v03/modules/jurisdiction.py:29–102), которые
-# использует ядро. Фаза 3 сверит их с первоисточниками.
-V03_RATES = {
+# использует ядро, и минимальный налог УСН, добавленный в фазе 2. Фаза 3
+# сверит их с первоисточниками.
+REGISTRY_RATES = {
     Country.RF: {
         "usn.income": "0.06",
         "usn.income_minus_expenses": "0.15",
+        "usn.min_tax": "0.01",
         "usn.vat_5": "0.05",
         "usn.vat_7": "0.07",
         "osno.profit": "0.25",
@@ -42,16 +44,16 @@ V03_RATES = {
 
 
 @pytest.mark.parametrize("country", list(Country))
-def test_rate_registry_holds_v03_values(country: Country) -> None:
+def test_rate_registry_values(country: Country) -> None:
     table = load_rates(country)
     assert table.country == country
     assert {key: entry.value for key, entry in table.rates.items()} == {
-        key: Decimal(value) for key, value in V03_RATES[country].items()
+        key: Decimal(value) for key, value in REGISTRY_RATES[country].items()
     }
 
 
 @pytest.mark.parametrize("country", list(Country))
-def test_every_v03_rate_is_flagged_for_review(country: Country) -> None:
+def test_every_rate_is_flagged_for_review(country: Country) -> None:
     # Ставки не выдумываем: пока нет первоисточника — needs_review (CLAUDE.md, фаза 3).
     for key, entry in load_rates(country).rates.items():
         assert entry.needs_review, key

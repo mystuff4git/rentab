@@ -1,7 +1,8 @@
-"""Модели ценообразования: почасовая, фиксированная цена (итерации v0.3)."""
+"""Модели ценообразования: почасовая, с потолком, фикс (закрытые формулы)."""
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 import pytest
@@ -21,111 +22,143 @@ from rentab_core.models import (
     UsnObject,
     UsnProfile,
     UsnVat,
+    VatMode,
 )
-from rentab_core.pricing import fixed
-from rentab_core.pricing.fixed import quote_fixed_price, solve_fixed_price
-from rentab_core.pricing.hourly import gross_revenue, net_net_earnings
+from rentab_core.pricing import net_of_vat
+from rentab_core.pricing.fixed import agreed_revenue, cost_plus_price, price_without_min_tax
+from rentab_core.pricing.hourly import capped_revenue, hourly_revenue, shadow_value
+from rentab_core.results import TaxBase
+from rentab_core.tax import calculate_tax, tax_terms
 from tests.core.factories import d, line
 
-KOPECK = Decimal("0.01")
-# Ниже этого знаменателя закрытая формула уходит в бесконечность.
-MIN_DENOMINATOR = Decimal("0.02")
-
-# (режим, ставка налога на доход/прибыль, ставка НДС, база «доходы − расходы»)
-REGIMES: list[tuple[TaxProfile, Decimal, Decimal, bool]] = [
-    (UsnProfile(), d("0.06"), d(0), False),
-    (UsnProfile(vat=UsnVat.VAT_7), d("0.06"), d("0.07"), False),
-    (AusnProfile(), d("0.08"), d(0), False),
-    (NpdProfile(client_type=NpdClientType.INDIVIDUAL), d("0.04"), d(0), False),
-    (
-        UsnProfile(tax_object=UsnObject.INCOME_MINUS_EXPENSES, vat=UsnVat.VAT_5),
-        d("0.15"),
-        d("0.05"),
-        True,
-    ),
-    (OsnoProfile(), d("0.25"), d("0.22"), True),
-    (KzOurProfile(vat=KzVat.VAT_16), d("0.20"), d("0.16"), True),
-    (KzOurProfile(form=KzForm.IP), d("0.10"), d(0), True),
+USN_6 = tax_terms(UsnProfile(vat=UsnVat.VAT_5))
+USN_15 = tax_terms(UsnProfile(tax_object=UsnObject.INCOME_MINUS_EXPENSES, vat=UsnVat.VAT_5))
+PROFILES: list[TaxProfile] = [
+    UsnProfile(),
+    UsnProfile(vat=UsnVat.VAT_7),
+    UsnProfile(tax_object=UsnObject.INCOME_MINUS_EXPENSES, vat=UsnVat.VAT_5),
+    AusnProfile(),
+    NpdProfile(client_type=NpdClientType.INDIVIDUAL),
+    OsnoProfile(),
+    KzOurProfile(vat=KzVat.VAT_16),
+    KzOurProfile(form=KzForm.IP),
 ]
+# Точность сравнения NNE с m* × P: деление в Decimal (28 знаков).
+EPS = Decimal("1e-15")
 
 
-def test_gross_revenue_and_nne() -> None:
+def test_shadow_value_and_hourly_revenue() -> None:
     # Контрольный сценарий v0.3: 15 000 × 5 + 6 000 × 15.
-    assert gross_revenue([line(5, billing=15000), line(15, billing=6000)]) == d(165_000)
-    assert net_net_earnings(d(165_000), d(92_500), d(10_000), d(0), d(9_900)) == d(52_600)
-    assert net_net_earnings(d(100), d(80), d(10), d(5), d(20)) == d(-15)
+    lines = [line(5, billing=15000), line(15, billing=6000)]
+    assert shadow_value(lines) == d(165_000)
+    assert hourly_revenue(d(165_000), VatMode.ON_TOP, d("0.05")) == d(165_000)
+    assert hourly_revenue(d(105_000), VatMode.INCLUDED, d("0.05")) == d(100_000)
+
+
+def test_net_of_vat() -> None:
+    assert net_of_vat(d(300_000), VatMode.ON_TOP, d("0.05")) == d(300_000)
+    assert net_of_vat(d(120), VatMode.INCLUDED, d("0.2")) == d(100)
+    assert net_of_vat(d(120), VatMode.INCLUDED, d(0)) == d(120)
+
+
+def test_capped_revenue() -> None:
+    assert capped_revenue(d(100_000), d(90_000), VatMode.ON_TOP, d("0.05")) == d(90_000)
+    assert capped_revenue(d(80_000), d(90_000), VatMode.ON_TOP, d("0.05")) == d(80_000)
+    assert capped_revenue(d(126_000), d(105_000), VatMode.INCLUDED, d("0.05")) == d(100_000)
+
+
+def test_agreed_revenue() -> None:
+    assert agreed_revenue(d(300_000), VatMode.ON_TOP, d("0.05")) == d(300_000)
+    included = agreed_revenue(d(300_000), VatMode.INCLUDED, d("0.05"))
+    assert included == d(300_000) / d("1.05")
+
+
+def test_methodology_example_prices() -> None:
+    # docs/methodology.md, раздел 11: C = 35 200, m* = 30%.
+    assert cost_plus_price(USN_6, d(35_200), d("0.30")) == d(55_000)
+    assert price_without_min_tax(USN_15, d(35_200), d("0.30")) == d(54_400)
+    assert cost_plus_price(USN_15, d(35_200), d("0.30")) == d(54_400)
+    # Цена безубыточности: работает минимальный налог, P = C / 0,99.
+    assert cost_plus_price(USN_15, d(35_200), d(0)) == d(35_200) / d("0.99")
+    assert cost_plus_price(USN_6, d(35_200), d(0)) == d(35_200) / d("0.94")
+
+
+def test_vat_is_not_in_the_price() -> None:
+    # L-02: в v0.3 УСН 6% + НДС 5% давал C / (1 − m − t − v) = 23 575 / 0,59.
+    assert cost_plus_price(USN_6, d(23_575), d("0.30")) == d(23_575) / d("0.64")
+    osno = tax_terms(OsnoProfile())
+    expected = d(100_000) * d("0.75") / (d("0.75") - d("0.30"))
+    assert cost_plus_price(osno, d(100_000), d("0.30")) == expected
 
 
 @given(
-    cost=st.integers(min_value=1_000, max_value=50_000_000),
-    margin_pct=st.integers(min_value=0, max_value=60),
-    regime=st.sampled_from(REGIMES),
+    cost=st.integers(min_value=1, max_value=50_000_000),
+    margin_pct=st.integers(min_value=0, max_value=80),
+    profile=st.sampled_from(PROFILES),
 )
-def test_iterations_match_closed_form(
-    cost: int, margin_pct: int, regime: tuple[TaxProfile, Decimal, Decimal, bool]
+def test_cost_plus_price_hits_target_margin_exactly(
+    cost: int, margin_pct: int, profile: TaxProfile
 ) -> None:
-    # L-03: итерации совпадают с закрытыми формулами с точностью до копейки,
-    # поэтому их замена в фазе 2 цифр не меняет (меняет исправление НДС, L-02).
-    profile, t, vat, profit_base = regime
+    terms = tax_terms(profile)
+    margin = Decimal(margin_pct) / 100
+    assume(1 - margin - terms.rate > 0)
+    costs = Decimal(cost)
+    price = cost_plus_price(terms, costs, margin)
+    tax = calculate_tax(terms, price, costs)
+    nne = price - costs - tax.tax
+    # NNE = m* × P, и это наименьшая такая цена: копейкой меньше маржа ниже цели.
+    assert abs(nne - margin * price) <= EPS * price
+    cheaper = price - Decimal("0.01")
+    cheaper_nne = cheaper - costs - calculate_tax(terms, cheaper, costs).tax
+    assert cheaper_nne < margin * cheaper
+    # VAT в цену не закладывается.
+    assert tax.vat == terms.vat_rate * price
+
+
+@given(cost=st.integers(min_value=1, max_value=10_000_000), margin_pct=st.integers(0, 20))
+def test_min_tax_decides_price_at_low_margin(cost: int, margin_pct: int) -> None:
+    # Для УСН 15% / 1% минимальный налог определяет цену при m* < 0,85 × 0,01 / 0,15.
     margin = Decimal(margin_pct) / 100
     costs = Decimal(cost)
-    if profit_base:
-        denominator = 1 - t - vat - margin
-        expected = costs * (1 - t) / denominator
-    else:
-        denominator = 1 - margin - t - vat
-        expected = costs / denominator
-    assume(denominator >= MIN_DENOMINATOR)
-
-    quote = quote_fixed_price(profile, costs, margin)
-    assert abs(quote.fixed_price - expected) <= KOPECK
-    assert quote.nne == quote.fixed_price - costs - quote.tax.total_tax
-    assert abs(quote.actual_margin - margin) < Decimal("1e-6")
-
-
-def test_basic_fixed_price_matches_v03_hand_calculation() -> None:
-    # legacy/rentab_v03/test_scenario.py, сценарий 2.
-    quote = quote_fixed_price(UsnProfile(), d(92_500), d("0.30"))
-    assert quote.fixed_price == d("144531.25")
-    assert quote.tax.total_tax == d("8671.875")
-    assert quote.nne == d("43359.375")
-    assert quote.actual_margin == d("0.30")
+    price = cost_plus_price(USN_15, costs, margin)
+    min_tax_binds = margin < d("0.0085") / d("0.15")
+    assert (price == costs / (1 - d("0.01") - margin)) == min_tax_binds
+    assert calculate_tax(USN_15, price, costs).min_tax_applied == min_tax_binds
 
 
 def test_zero_costs_give_zero_price() -> None:
-    quote = quote_fixed_price(OsnoProfile(), d(0), d("0.30"))
-    assert quote.fixed_price == 0
-    assert quote.actual_margin == 0
+    assert cost_plus_price(tax_terms(OsnoProfile()), d(0), d("0.30")) == 0
+    assert cost_plus_price(USN_15, d(0), d("0.30")) == 0
 
 
 @pytest.mark.parametrize("margin", ["-0.1", "1", "1.5"])
 def test_margin_outside_unit_interval(margin: str) -> None:
     with pytest.raises(FixedPriceError, match=r"\[0; 1\)"):
-        solve_fixed_price(UsnProfile(), d(1000), Decimal(margin))
+        cost_plus_price(USN_6, d(1000), Decimal(margin))
 
 
-def test_unreachable_margin() -> None:
-    with pytest.raises(FixedPriceError, match="не может быть прибыльным") as error:
-        solve_fixed_price(UsnProfile(), d(1000), d("0.95"))
+@pytest.mark.parametrize(
+    ("terms", "margin", "message"),
+    [
+        (USN_6, "0.95", re.escape("Целевая маржа 95.0% недостижима при режиме «УСН income (6%)»")),
+        # L-20: точная граница m* + t = 1 — всегда отказ.
+        (USN_6, "0.94", re.escape("маржа + ставка налога = 100.0% ≥ 100%")),
+        (USN_15, "0.85", re.escape("маржа + ставка налога = 100.0% ≥ 100%")),
+    ],
+)
+def test_unreachable_margin(terms: object, margin: str, message: str) -> None:
+    with pytest.raises(FixedPriceError, match=message) as error:
+        cost_plus_price(terms, d(1000), Decimal(margin))  # type: ignore[arg-type]
     assert isinstance(error.value, ValueError)  # совместимость с v0.3
 
 
-def test_exact_boundary_is_always_unreachable() -> None:
-    # L-20: при m + t = 1 знаменатель ровно 0. v0.3 из-за погрешности float то
-    # отказывал, то выдавал цену порядка 10^21 ₽ (УСН 6% при марже 94%);
-    # точная арифметика ядра отказывает всегда.
-    with pytest.raises(FixedPriceError, match=r"= 1\.0000 ≥ 1"):
-        solve_fixed_price(UsnProfile(), d(100_000), d("0.94"))
-    with pytest.raises(FixedPriceError, match=r"= 1\.0000 ≥ 1"):
-        solve_fixed_price(KzOurProfile(vat=KzVat.VAT_16), d(100_000), d("0.70"))
+def test_min_tax_denominator_is_checked() -> None:
+    # Искусственный режим, где минимальный налог выше ставки налога на прибыль.
+    terms = USN_15.model_copy(update={"rate": d("0.10"), "min_rate": d("0.20")})
+    with pytest.raises(FixedPriceError, match=re.escape("= 100.0%")):
+        cost_plus_price(terms, d(1000), d("0.80"))
 
 
-def test_iteration_limit_returns_last_approximation(monkeypatch: pytest.MonkeyPatch) -> None:
-    # KNOWN-BUG L-03 → фаза 2: константы итераций v0.3.
-    assert fixed.MAX_PRICE_ITERATIONS == 50
-    assert fixed.PRICE_CONVERGENCE_EPS == KOPECK
-    converged = solve_fixed_price(OsnoProfile(), d(100_000), d("0.30"))
-    monkeypatch.setattr(fixed, "MAX_PRICE_ITERATIONS", 1)
-    one_step = solve_fixed_price(OsnoProfile(), d(100_000), d("0.30"))
-    assert one_step != converged
-    assert one_step > d(100_000) / (1 - d("0.30"))
+def test_profit_base_price_covers_costs() -> None:
+    assert USN_15.base == TaxBase.PROFIT
+    assert price_without_min_tax(USN_15, d(1000), d(0)) == d(1000)

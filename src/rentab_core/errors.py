@@ -13,7 +13,7 @@ class RentabError(Exception):
 
 
 class FixedPriceError(RentabError, ValueError):
-    """Фиксированную цену нельзя рассчитать при заданной марже и режиме.
+    """Цену «издержки + маржа» нельзя рассчитать: цель недостижима при режиме.
 
     Наследует ValueError: в v0.3 эта ситуация была ValueError, и вызывающий
     код мог ловить именно его.
@@ -22,3 +22,7 @@ class FixedPriceError(RentabError, ValueError):
 
 class ReferenceDataError(RentabError):
     """Справочник ядра (ставки, каталог пошлин) отсутствует или повреждён."""
+
+
+class CurrencyConversionError(RentabError, ValueError):
+    """Сумму нельзя пересчитать в валюту проекта: не задан нужный курс."""

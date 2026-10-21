@@ -1,79 +1,151 @@
 """Выходные модели ядра: налог, строки сметы, этапы, итог расчёта.
 
-Значения не округлены: округление — дело вывода (`money.round_to`).
+Значения не округлены: округление — дело вывода (`money.round_to`). Все
+суммы — в валюте проекта. Обозначения — docs/methodology.md.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Literal
-
-from pydantic import Field
 
 from rentab_core.models import (
+    CappedPricing,
     CoreModel,
     Country,
-    Disbursement,
+    DisbursementKind,
     JurisdictionMode,
+    PricingModel,
     Role,
+    VatMode,
 )
-from rentab_core.money import Currency
+from rentab_core.money import ONE, ZERO, Currency
 
 
-class TaxResult(CoreModel):
-    """Налоги проекта по выбранному режиму.
+class TaxBase(StrEnum):
+    """База налога на доход или прибыль."""
+
+    INCOME = "income"  # «доходы»: Tax = t × R
+    PROFIT = "profit"  # «доходы − расходы»: Tax = max(t × max(R − C, 0), t_min × R)
+
+
+class TaxTerms(CoreModel):
+    """Параметры налогового режима для расчёта проекта.
 
     Attributes:
         regime_label: Подпись режима для интерфейса и сметы.
-        revenue: Сумма, полученная от клиента (база до вычета пошлин).
-        taxable_base: revenue − перевыставленные пошлины, не меньше нуля.
-        income_tax_base: База налога на доход или прибыль.
-        income_tax_rate: Ставка налога на доход или прибыль.
-        income_tax: Налог на доход или прибыль.
-        vat_rate: Ставка НДС.
-        vat: НДС с taxable_base.
-        total_tax: income_tax + vat. НДС здесь — расход фирмы
-            (KNOWN-BUG L-02 → фаза 2).
+        base: База налога.
+        rate: Ставка налога t.
+        min_rate: Ставка минимального налога t_min (доля выручки); 0 — нет.
+        vat_rate: Ставка НДС v; 0 — режим без НДС.
     """
 
     regime_label: str
+    base: TaxBase
+    rate: Decimal
+    min_rate: Decimal = ZERO
+    vat_rate: Decimal = ZERO
+
+
+class TaxResult(CoreModel):
+    """Налог на доход или прибыль по проекту и НДС.
+
+    Attributes:
+        terms: Параметры режима.
+        revenue: Выручка за услуги без НДС R.
+        costs: Издержки проекта C (для базы «доходы − расходы»).
+        taxable_base: R для базы «доходы», max(R − C, 0) — для «доходы − расходы».
+        regular_tax: t × taxable_base.
+        min_tax: t_min × R.
+        tax: Налог проекта: max(regular_tax, min_tax). Расход фирмы.
+        vat: НДС, предъявляемый клиенту сверху: v × R. Не доход и не расход фирмы.
+    """
+
+    terms: TaxTerms
     revenue: Decimal
+    costs: Decimal
     taxable_base: Decimal
-    income_tax_base: Decimal
-    income_tax_rate: Decimal
-    income_tax: Decimal
-    vat_rate: Decimal
+    regular_tax: Decimal
+    min_tax: Decimal
+    tax: Decimal
     vat: Decimal
-    total_tax: Decimal
+
+    @property
+    def regime_label(self) -> str:
+        """Подпись режима."""
+        return self.terms.regime_label
+
+    @property
+    def min_tax_applied(self) -> bool:
+        """Налог проекта определяет минимальный налог."""
+        return self.min_tax > self.regular_tax
+
+    @property
+    def profit_tax_applied(self) -> bool:
+        """Налог проекта — налог на прибыль t × (R − C) > 0 (база «доходы − расходы»)."""
+        return self.terms.base == TaxBase.PROFIT and not self.min_tax_applied and self.tax > 0
 
 
 class EstimateLine(CoreModel):
-    """Строка сметы: сотрудник на этапе с часами (`team_with_hours` v0.3)."""
+    """Строка сметы: назначение сотрудника на этап, ставки в валюте проекта.
+
+    Attributes:
+        cost_rate: Себестоимость биллируемого часа c = W / (H × u).
+        contract_cost_rate: Себестоимость контрактного часа ĉ = W / H.
+    """
 
     stage_name: str
     employee_name: str
     role: Role
     billing_rate: Decimal
     cost_rate: Decimal
+    contract_cost_rate: Decimal
     hours: Decimal
 
     @property
-    def revenue(self) -> Decimal:
-        """Теневая выручка строки: ставка для клиента × часы."""
+    def shadow_value(self) -> Decimal:
+        """Теневая стоимость строки: ставка для клиента × часы."""
         return self.billing_rate * self.hours
 
     @property
     def labor_cost(self) -> Decimal:
-        """Трудозатраты строки: себестоимость часа × часы."""
+        """Трудозатраты строки: себестоимость биллируемого часа × часы."""
         return self.cost_rate * self.hours
+
+    @property
+    def underutilization_cost(self) -> Decimal:
+        """Стоимость недозагрузки строки: (c − ĉ) × часы."""
+        return (self.cost_rate - self.contract_cost_rate) * self.hours
+
+
+class DisbursementLine(CoreModel):
+    """Прямой расход проекта, пересчитанный в валюту проекта.
+
+    Attributes:
+        original_amount: Сумма во входной валюте.
+        original_currency: Входная валюта.
+        amount: Сумма в валюте проекта.
+        stage: Этап собственного расхода; None — распределяется по этапам.
+    """
+
+    name: str
+    kind: DisbursementKind
+    original_amount: Decimal
+    original_currency: Currency
+    amount: Decimal
+    stage: str | None = None
+
+    @property
+    def billable(self) -> bool:
+        """Перевыставляется ли расход клиенту."""
+        return self.kind == DisbursementKind.BILLABLE
 
 
 class UnresolvedAssignment(CoreModel):
     """Назначение, чей исполнитель отсутствует в команде фирмы.
 
-    v0.3 молча пропускает такие этапы в расчёте; ядро пропускает их так же,
-    но сообщает о них, чтобы интерфейс мог предупредить пользователя.
+    Такие назначения пропускаются, как в v0.3, но ядро сообщает о них, чтобы
+    интерфейс мог предупредить пользователя.
     """
 
     stage_name: str
@@ -89,17 +161,60 @@ class StageFlag(StrEnum):
 
 
 class StageResult(CoreModel):
-    """Маржинальность этапа фикс-прайса (светофор)."""
+    """Экономика этапа: доля выручки, издержки, налог, маржа и цвет.
+
+    Attributes:
+        shadow_value: V_s = Σ ставка × часы.
+        revenue: R_s — доля выручки проекта по ключу распределения.
+        labor: Трудозатраты этапа.
+        overheads: Накладные этапа ρ × H_s.
+        own: Собственные расходы этапа (привязанные и распределённые).
+        costs: C_s = labor + overheads + own.
+        tax: Tax_s — доля налога проекта.
+        nne: R_s − C_s − Tax_s.
+        margin: nne / R_s (0, если R_s = 0).
+    """
 
     stage_name: str
+    hours: Decimal
+    shadow_value: Decimal
+    revenue: Decimal
+    labor: Decimal
+    overheads: Decimal
+    own: Decimal
     costs: Decimal
-    revenue_share: Decimal
+    tax: Decimal
+    nne: Decimal
     margin: Decimal
     flag: StageFlag
 
 
-class EstimateBase(CoreModel):
-    """Поля сметы, общие для обеих моделей ценообразования."""
+class Estimate(CoreModel):
+    """Смета проекта по методологии фазы 2.
+
+    Attributes:
+        currency: Валюта проекта (страны расчёта налога).
+        pricing: Модель ценообразования проекта.
+        vat_mode: Как указаны цены проекта.
+        target_margin: Целевая маржа NNE m*.
+        lines: Строки «этап × сотрудник».
+        disbursements: Прямые расходы в валюте проекта.
+        blended_rate: Σ ставка × часы / Σ часы.
+        leverage: Часы младших / часы старших.
+        overhead_rate: Ставка накладных ρ на биллируемый час.
+        shadow_value: Σ ставка × часы по проекту.
+        revenue: Выручка за услуги без НДС R.
+        disbursements_billed: Возмещаемые расходы D.
+        disbursements_own: Собственные расходы Own.
+        direct_labor: Трудозатраты Σ c × h.
+        overheads_alloc: Накладные проекта ρ × Σ h.
+        total_costs: C = Labor + OH + Own.
+        underutilization_cost: Σ (c − ĉ) × h — сколько добавила утилизация.
+        tax: Налог и НДС.
+        nne: R − C − Tax.
+        margin: NNE / R (0, если R = 0).
+        stages: Экономика этапов.
+    """
 
     project_name: str
     client: str
@@ -107,48 +222,59 @@ class EstimateBase(CoreModel):
     calc_country: Country
     jurisdiction_mode: JurisdictionMode
     currency: Currency
-    regime_label: str
+    pricing: PricingModel
+    vat_mode: VatMode
+    target_margin: Decimal
+    lines: tuple[EstimateLine, ...]
+    disbursements: tuple[DisbursementLine, ...]
+    unresolved_assignments: tuple[UnresolvedAssignment, ...]
+    total_hours: Decimal
     blended_rate: Decimal
     leverage: Decimal
-    total_hours: Decimal
     overhead_rate: Decimal
-    lines: tuple[EstimateLine, ...]
-    disbursements: tuple[Disbursement, ...]
-    unresolved_assignments: tuple[UnresolvedAssignment, ...]
-    direct_labor: Decimal
-    overheads_alloc: Decimal
+    shadow_value: Decimal
+    revenue: Decimal
     disbursements_billed: Decimal
     disbursements_own: Decimal
+    direct_labor: Decimal
+    overheads_alloc: Decimal
+    total_costs: Decimal
+    underutilization_cost: Decimal
     tax: TaxResult
     nne: Decimal
-
-
-class HourlyEstimate(EstimateBase):
-    """Смета почасовой модели."""
-
-    pricing: Literal["hourly"] = "hourly"
-    gross_revenue: Decimal
-
-    @property
-    def total_client(self) -> Decimal:
-        """К оплате клиентом: услуги + перевыставляемые расходы (без НДС, L-02)."""
-        return self.gross_revenue + self.disbursements_billed
-
-
-class FixedPriceEstimate(EstimateBase):
-    """Смета фиксированной цены."""
-
-    pricing: Literal["fixed"] = "fixed"
-    fixed_price: Decimal
-    total_costs: Decimal
-    actual_margin: Decimal
-    target_margin: Decimal
+    margin: Decimal
     stages: tuple[StageResult, ...]
 
     @property
+    def regime_label(self) -> str:
+        """Подпись налогового режима."""
+        return self.tax.regime_label
+
+    @property
+    def vat(self) -> Decimal:
+        """НДС, предъявляемый клиенту."""
+        return self.tax.vat
+
+    @property
+    def price_with_vat(self) -> Decimal:
+        """Цена услуг для клиента с НДС: R + VAT."""
+        return self.revenue + self.tax.vat
+
+    @property
     def total_client(self) -> Decimal:
-        """К оплате клиентом: фикс-цена + перевыставляемые расходы (без НДС, L-02)."""
-        return self.fixed_price + self.disbursements_billed
+        """К оплате клиентом: R + VAT + D."""
+        return self.revenue + self.tax.vat + self.disbursements_billed
 
+    @property
+    def write_off(self) -> Decimal:
+        """Списание по потолку (capped fee): теневая стоимость сверх потолка, без НДС."""
+        if isinstance(self.pricing, CappedPricing):
+            return self.shadow_value_net - self.revenue
+        return ZERO
 
-Estimate = Annotated[HourlyEstimate | FixedPriceEstimate, Field(discriminator="pricing")]
+    @property
+    def shadow_value_net(self) -> Decimal:
+        """Теневая стоимость без НДС (в режиме «включая НДС» — за вычетом НДС)."""
+        if self.vat_mode == VatMode.INCLUDED:
+            return self.shadow_value / (ONE + self.tax.terms.vat_rate)
+        return self.shadow_value

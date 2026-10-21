@@ -1,22 +1,20 @@
-"""Расчёт сметы проекта: точка входа ядра.
+"""Расчёт сметы проекта: точка входа ядра (docs/methodology.md).
 
-В v0.3 эта сборка жила в обработчике кнопки «Рассчитать смету» страницы
-`pages/02_Проект.py:549–751` (L-13). Порядок шагов и формулы сохранены.
+Порядок: страна и валюта проекта → строки «этап × сотрудник» с себестоимостью
+биллируемого часа → ставка накладных → прямые расходы в валюте проекта →
+издержки C → выручка R по модели цены → налог и НДС → NNE → этапы.
 """
 
 from __future__ import annotations
 
-from typing import Any, assert_never
+from typing import assert_never
 
 from rentab_core.analysis.stages import StageLines, stage_results
 from rentab_core.analysis.team import blended_rate, leverage
-from rentab_core.costing import (
-    allocate_overheads,
-    direct_labor,
-    disbursements_total,
-    overhead_rate,
-)
+from rentab_core.costing import employee_cost, overhead_rate
+from rentab_core.fx import convert
 from rentab_core.models import (
+    CappedPricing,
     DisbursementKind,
     Firm,
     FixedPricing,
@@ -24,31 +22,34 @@ from rentab_core.models import (
     Project,
     Scenario,
 )
-from rentab_core.money import decimal_sum
-from rentab_core.pricing.fixed import quote_fixed_price
-from rentab_core.pricing.hourly import gross_revenue, net_net_earnings
+from rentab_core.money import ZERO, Currency, decimal_sum
+from rentab_core.pricing.fixed import agreed_revenue, cost_plus_price
+from rentab_core.pricing.hourly import capped_revenue, hourly_revenue, shadow_value
 from rentab_core.results import (
+    DisbursementLine,
     Estimate,
     EstimateLine,
-    FixedPriceEstimate,
-    HourlyEstimate,
     UnresolvedAssignment,
 )
-from rentab_core.tax import calculate_tax
+from rentab_core.tax import calculate_tax, tax_terms
 
 
 def resolve_stages(
-    firm: Firm, project: Project
+    firm: Firm, project: Project, currency: Currency
 ) -> tuple[list[StageLines], list[UnresolvedAssignment]]:
-    """Сопоставляет назначения этапов с командой фирмы.
+    """Сопоставляет назначения этапов с командой и переводит ставки в валюту проекта.
 
-    Назначение с исполнителем, которого нет в команде, пропускается, как в
-    v0.3; этап без единого найденного исполнителя в расчёт не входит.
+    Назначение с исполнителем, которого нет в команде, пропускается (как в
+    v0.3); этап без единого найденного исполнителя в расчёт не входит.
 
     Returns:
         Этапы со строками сметы и список пропущенных назначений.
+
+    Raises:
+        CurrencyConversionError: Ставки сотрудника в валюте, для которой нет курса.
     """
     team = firm.team_by_name()
+    rates = firm.exchange_rates
     stages: list[StageLines] = []
     unresolved: list[UnresolvedAssignment] = []
     for stage in project.stages:
@@ -60,13 +61,17 @@ def resolve_stages(
                     UnresolvedAssignment(stage_name=stage.name, employee=assignment.employee)
                 )
                 continue
+            cost = employee_cost(employee)
             lines.append(
                 EstimateLine(
                     stage_name=stage.name,
                     employee_name=employee.name,
                     role=employee.role,
-                    billing_rate=employee.billing_rate,
-                    cost_rate=employee.cost_rate,
+                    billing_rate=convert(employee.billing_rate, employee.currency, currency, rates),
+                    cost_rate=convert(cost.cost_rate, employee.currency, currency, rates),
+                    contract_cost_rate=convert(
+                        cost.contract_cost_rate, employee.currency, currency, rates
+                    ),
                     hours=assignment.hours,
                 )
             )
@@ -82,81 +87,102 @@ def calculate_estimate(scenario: Scenario) -> Estimate:
         scenario: Фирма и проект.
 
     Returns:
-        HourlyEstimate или FixedPriceEstimate — по модели ценообразования проекта.
+        Смета в валюте страны расчёта налога.
 
     Raises:
-        FixedPriceError: Фиксированную цену нельзя рассчитать при заданной
-            марже и налоговом режиме.
+        FixedPriceError: Цена «издержки + маржа» недостижима при режиме.
+        CurrencyConversionError: Для пересчёта суммы в валюту проекта нет курса.
     """
     firm, project = scenario.firm, scenario.project
     calc_country = firm.jurisdiction.calc_country(project.calc_country)
-    profile = firm.jurisdiction.tax_profile(calc_country)
+    currency = calc_country.currency
+    terms = tax_terms(firm.jurisdiction.tax_profile(calc_country))
+    rates = firm.exchange_rates
 
-    stages, unresolved = resolve_stages(firm, project)
+    stages, unresolved = resolve_stages(firm, project, currency)
     lines = tuple(line for stage in stages for line in stage.lines)
     total_hours = decimal_sum(line.hours for line in lines)
-    rate = overhead_rate(firm.overheads, firm.billable_hours_per_month)
-    labor = direct_labor(lines)
-    overheads_alloc = allocate_overheads(rate, total_hours)
-    billed = disbursements_total(project.disbursements, DisbursementKind.BILLABLE)
-    own = disbursements_total(project.disbursements, DisbursementKind.OWN)
-    # KNOWN-BUG L-12 → фаза 2: расходы «Прочее» (EXTRA) не входят ни в NNE, ни в цену.
-
-    common: dict[str, Any] = {
-        "project_name": project.name,
-        "client": project.client,
-        "description": project.description,
-        "calc_country": calc_country,
-        "jurisdiction_mode": firm.jurisdiction.mode,
-        "currency": calc_country.currency,
-        "blended_rate": blended_rate(lines),
-        "leverage": leverage(lines),
-        "total_hours": total_hours,
-        "overhead_rate": rate,
-        "lines": lines,
-        "disbursements": project.disbursements,
-        "unresolved_assignments": tuple(unresolved),
-        "direct_labor": labor,
-        "overheads_alloc": overheads_alloc,
-        "disbursements_billed": billed,
-        "disbursements_own": own,
-    }
+    rho = overhead_rate(firm, currency)
+    disbursements = tuple(
+        DisbursementLine(
+            name=item.name,
+            kind=item.kind,
+            original_amount=item.amount,
+            original_currency=item.currency,
+            amount=convert(item.amount, item.currency, currency, rates),
+            stage=item.stage,
+        )
+        for item in project.disbursements
+    )
+    billed = decimal_sum(item.amount for item in disbursements if item.billable)
+    own = decimal_sum(item.amount for item in disbursements if not item.billable)
+    labor = decimal_sum(line.labor_cost for line in lines)
+    overheads_alloc = rho * total_hours
+    total_costs = labor + overheads_alloc + own
+    shadow = shadow_value(lines)
 
     pricing = project.pricing
     match pricing:
         case HourlyPricing():
-            gross = gross_revenue(lines)
-            tax = calculate_tax(
-                profile,
-                gross + billed,
-                expenses=labor + overheads_alloc + own,
-                disbursements_billed=billed,
-            )
-            return HourlyEstimate(
-                **common,
-                regime_label=tax.regime_label,
-                tax=tax,
-                nne=net_net_earnings(gross, labor, overheads_alloc, own, tax.total_tax),
-                gross_revenue=gross,
-            )
+            revenue = hourly_revenue(shadow, project.vat_mode, terms.vat_rate)
+        case CappedPricing():
+            revenue = capped_revenue(shadow, pricing.cap, project.vat_mode, terms.vat_rate)
         case FixedPricing():
-            total_costs = labor + overheads_alloc + own
-            quote = quote_fixed_price(profile, total_costs, pricing.target_margin)
-            return FixedPriceEstimate(
-                **common,
-                regime_label=quote.tax.regime_label,
-                tax=quote.tax,
-                nne=quote.nne,
-                fixed_price=quote.fixed_price,
-                total_costs=total_costs,
-                actual_margin=quote.actual_margin,
-                target_margin=pricing.target_margin,
-                stages=stage_results(
-                    stages,
-                    fixed_price=quote.fixed_price,
-                    target_margin=pricing.target_margin,
-                    overheads_alloc=overheads_alloc,
-                ),
-            )
+            if pricing.price is None:
+                revenue = cost_plus_price(terms, total_costs, project.target_margin)
+            else:
+                revenue = agreed_revenue(pricing.price, project.vat_mode, terms.vat_rate)
         case _:
             assert_never(pricing)
+
+    tax = calculate_tax(terms, revenue, total_costs)
+    nne = revenue - total_costs - tax.tax
+
+    # Собственный расход привязан к этапу, только если этап вошёл в расчёт;
+    # иначе он распределяется по этапам вместе с непривязанными.
+    stage_names = {stage.name for stage in stages}
+    own_items = [item for item in disbursements if item.kind == DisbursementKind.OWN]
+    own_by_stage = {
+        name: decimal_sum(item.amount for item in own_items if item.stage == name)
+        for name in stage_names
+    }
+    unassigned_own = decimal_sum(item.amount for item in own_items if item.stage not in stage_names)
+
+    return Estimate(
+        project_name=project.name,
+        client=project.client,
+        description=project.description,
+        calc_country=calc_country,
+        jurisdiction_mode=firm.jurisdiction.mode,
+        currency=currency,
+        pricing=pricing,
+        vat_mode=project.vat_mode,
+        target_margin=project.target_margin,
+        lines=lines,
+        disbursements=disbursements,
+        unresolved_assignments=tuple(unresolved),
+        total_hours=total_hours,
+        blended_rate=blended_rate(lines),
+        leverage=leverage(lines),
+        overhead_rate=rho,
+        shadow_value=shadow,
+        revenue=revenue,
+        disbursements_billed=billed,
+        disbursements_own=own,
+        direct_labor=labor,
+        overheads_alloc=overheads_alloc,
+        total_costs=total_costs,
+        underutilization_cost=decimal_sum(line.underutilization_cost for line in lines),
+        tax=tax,
+        nne=nne,
+        margin=nne / revenue if revenue > 0 else ZERO,
+        stages=stage_results(
+            stages,
+            revenue=revenue,
+            overhead_rate=rho,
+            own_by_stage=own_by_stage,
+            unassigned_own=unassigned_own,
+            tax=tax,
+            target_margin=project.target_margin,
+        ),
+    )
