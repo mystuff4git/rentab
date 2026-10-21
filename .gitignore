@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+
+# Инструменты
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# IDE и ОС
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Секреты и пользовательские данные: никогда не коммитим
+.env
+.env.*
+.streamlit/secrets.toml
+**/firm_profile.json

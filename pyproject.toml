@@ -1,0 +1,145 @@
+[project]
+name = "rentab"
+dynamic = ["version"]
+description = "Калькулятор стоимости и рентабельности проектов IP-юридического консалтинга (РФ, РК) по методологии Майстера"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Yaroslav Statsurin" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Legal Industry",
+    "Natural Language :: Russian",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial",
+    "Typing :: Typed",
+]
+# Ядро пока без рантайм-зависимостей: pydantic появится в фазе 1.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/mystuff4git/rentab"
+"Demo (v0.3)" = "https://rentab.streamlit.app/"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.100",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.8",
+]
+# Зависимости замороженного v0.3 (legacy/), нужные characterization-тестам.
+# Streamlit и plotly сюда не входят: тесты не импортируют страницы v0.3.
+legacy = [
+    "openpyxl>=3.1",
+    "pandas>=2.0",
+    "types-openpyxl>=3.1",
+]
+
+[tool.uv]
+default-groups = ["dev", "legacy"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/rentab_core/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rentab_core"]
+
+# ---------------------------------------------------------------------------
+# ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+# legacy/ — неизменяемый эталон v0.3, его не линтуем и не форматируем.
+extend-exclude = ["legacy"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "C4",  # flake8-comprehensions
+    "N",   # pep8-naming
+    "PT",  # flake8-pytest-style
+    "TID", # flake8-tidy-imports (запрет UI-импортов в ядре)
+    "RUF", # ruff-specific
+]
+ignore = [
+    # «Неоднозначные» символы Unicode: на русском тексте срабатывают на каждой
+    # кириллической букве, похожей на латинскую (а, е, о, с, р ...).
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["rentab_core"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"streamlit".msg = "rentab_core не зависит от UI: streamlit разрешён только в app/"
+"plotly".msg = "rentab_core не зависит от UI: plotly разрешён только в app/"
+
+[tool.ruff.lint.per-file-ignores]
+"app/**" = ["TID251"]
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+files = ["src", "tests"]
+exclude = ["^legacy/"]
+strict = true
+warn_unreachable = true
+
+# Модули v0.3 подгружаются тестами из legacy/ динамически и не типизированы.
+[[tool.mypy.overrides]]
+module = ["modules", "modules.*"]
+ignore_missing_imports = true
+follow_imports = "skip"
+
+# ---------------------------------------------------------------------------
+# pytest и coverage
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=rentab_core",
+    "--cov-report=term-missing",
+]
+markers = [
+    "characterization: фиксирует поведение legacy v0.3 (снимки в tests/characterization/snapshots)",
+]
+xfail_strict = true
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+branch = true
+source = ["rentab_core"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
