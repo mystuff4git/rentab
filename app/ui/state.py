@@ -14,32 +14,33 @@ from typing import TypeVar, cast
 import streamlit as st
 
 from rentab_core.models import (
-    DEFAULT_BILLABLE_HOURS_PER_MONTH,
     DEFAULT_TARGET_MARGIN,
+    CappedPricing,
     Country,
     Disbursement,
     Employee,
+    ExchangeRates,
     Firm,
     FixedPricing,
     HourlyPricing,
     Jurisdiction,
+    JurisdictionMode,
     Overhead,
     PricingModel,
     Project,
     Scenario,
     Stage,
+    VatMode,
 )
-from rentab_core.money import PERCENT, to_decimal
+from rentab_core.money import PERCENT, Currency, to_decimal
 from rentab_core.results import Estimate
-from ui.labels import PRICING_LABELS
 
 # Ключи session_state. Имена виджетов v0.3 сохранены, где это возможно.
 JURISDICTION = "jurisdiction"
 TEAM = "team"
 OVERHEADS = "overheads"
-BILLABLE_HOURS = "billable_hours_per_month"
-CONTRACT_HOURS = "contract_hours_per_month"
-EXCHANGE_RATE = "exchange_rate_rub_per_kzt"
+RUB_PER_KZT = "rub_per_kzt"
+RUB_PER_USD = "rub_per_usd"
 FIRM_NAME = "firm_name"
 PROJECT_NAME = "project_name"
 PROJECT_CLIENT = "project_client"
@@ -49,11 +50,23 @@ SELECTED_DUTIES = "selected_duties"
 CUSTOM_EXPENSES = "custom_expenses"
 PRICING_MODEL = "pricing_model"
 TARGET_MARGIN_PCT = "target_margin"
+CAP_AMOUNT = "cap_amount"
+AGREED_PRICE = "agreed_price"
+VAT_MODE = "vat_mode"
 CALC_COUNTRY = "calc_country_choice"
 ESTIMATE = "estimate"
 
-# Курс «1 ₸ = x ₽» по умолчанию — индикативный, как в v0.3 (L-06 → фаза 3).
-DEFAULT_EXCHANGE_RATE = 0.18
+# Модели цены в интерфейсе: у фиксированной цены два способа задания.
+PRICING_HOURLY = "hourly"
+PRICING_CAPPED = "capped"
+PRICING_FIXED = "fixed"
+PRICING_AGREED = "agreed"
+PRICING_KINDS = (PRICING_HOURLY, PRICING_CAPPED, PRICING_FIXED, PRICING_AGREED)
+
+# Курс «₽ за 1 ₸» по умолчанию — индикативный, как в v0.3; загрузка курсов
+# ЦБ РФ и НБРК — фаза 3. Курс доллара по умолчанию не задан: 0 — «нет курса».
+DEFAULT_RUB_PER_KZT = 0.18
+NO_RATE = 0.0
 DEFAULT_TARGET_MARGIN_PCT = int(DEFAULT_TARGET_MARGIN * PERCENT)
 
 ItemT = TypeVar("ItemT")
@@ -70,12 +83,17 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
     "rf_npd_client",
     "kz_form_choice",
     "kz_vat_choice",
+    RUB_PER_KZT,
+    RUB_PER_USD,
     PROJECT_NAME,
     PROJECT_CLIENT,
     PROJECT_DESCRIPTION,
     PRICING_MODEL,
     TARGET_MARGIN_PCT,
     "margin_slider",
+    CAP_AMOUNT,
+    AGREED_PRICE,
+    VAT_MODE,
     CALC_COUNTRY,
     FIRM_NAME,
 )
@@ -92,8 +110,8 @@ def init_defaults() -> None:
     """Заполняет session_state значениями по умолчанию (не перетирая введённое)."""
     st.session_state.setdefault(TEAM, [])
     st.session_state.setdefault(OVERHEADS, [])
-    st.session_state.setdefault(BILLABLE_HOURS, float(DEFAULT_BILLABLE_HOURS_PER_MONTH))
-    st.session_state.setdefault(EXCHANGE_RATE, DEFAULT_EXCHANGE_RATE)
+    st.session_state.setdefault(RUB_PER_KZT, DEFAULT_RUB_PER_KZT)
+    st.session_state.setdefault(RUB_PER_USD, NO_RATE)
     st.session_state.setdefault(PROJECT_STAGES, [])
     st.session_state.setdefault(SELECTED_DUTIES, {country.value: [] for country in Country})
     st.session_state.setdefault(CUSTOM_EXPENSES, [])
@@ -137,6 +155,13 @@ def jurisdiction() -> Jurisdiction | None:
     return value if isinstance(value, Jurisdiction) else None
 
 
+def home_currency(value: Jurisdiction | None) -> Currency:
+    """Основная валюта фирмы: тенге для «Только РК», иначе рубль."""
+    if value is not None and value.mode == JurisdictionMode.KZ:
+        return Currency.KZT
+    return Currency.RUB
+
+
 def estimate() -> Estimate | None:
     """Последняя рассчитанная смета."""
     return cast(Estimate | None, st.session_state.get(ESTIMATE))
@@ -152,27 +177,58 @@ def text(key: str) -> str:
     return str(st.session_state.get(key, ""))
 
 
+def _rate(key: str, default: float) -> Decimal | None:
+    """Курс из session_state; 0 — курс не задан."""
+    value = number(key, default)
+    return value if value > 0 else None
+
+
+def exchange_rates() -> ExchangeRates:
+    """Курсы валют фирмы со страницы «Настройка»."""
+    return ExchangeRates(
+        rub_per_kzt=_rate(RUB_PER_KZT, DEFAULT_RUB_PER_KZT),
+        rub_per_usd=_rate(RUB_PER_USD, NO_RATE),
+    )
+
+
 def firm() -> Firm:
     """Фирма из данных страницы «Настройка»."""
-    contract_hours = st.session_state.get(CONTRACT_HOURS)
     return Firm(
         name=text(FIRM_NAME),
         jurisdiction=jurisdiction() or Jurisdiction(),
         team=tuple(team()),
         overheads=tuple(overheads()),
-        billable_hours_per_month=number(BILLABLE_HOURS, float(DEFAULT_BILLABLE_HOURS_PER_MONTH)),
-        contract_hours_per_month=(
-            None if contract_hours is None else to_decimal(float(contract_hours))
-        ),
+        exchange_rates=exchange_rates(),
     )
 
 
+def pricing_kind() -> str:
+    """Выбранная модель цены: hourly, capped, fixed или agreed."""
+    value = st.session_state.get(PRICING_MODEL, PRICING_HOURLY)
+    return value if value in PRICING_KINDS else PRICING_HOURLY
+
+
 def pricing() -> PricingModel:
-    """Модель ценообразования; целевая маржа в интерфейсе — целые проценты."""
-    if st.session_state.get(PRICING_MODEL) == PRICING_LABELS["fixed"]:
-        margin_pct = int(st.session_state.get(TARGET_MARGIN_PCT, DEFAULT_TARGET_MARGIN_PCT))
-        return FixedPricing(target_margin=Decimal(margin_pct) / PERCENT)
+    """Модель ценообразования из данных страницы «Проект»."""
+    kind = pricing_kind()
+    if kind == PRICING_CAPPED:
+        return CappedPricing(cap=number(CAP_AMOUNT, 0.0))
+    if kind == PRICING_FIXED:
+        return FixedPricing()
+    if kind == PRICING_AGREED:
+        return FixedPricing(price=number(AGREED_PRICE, 0.0))
     return HourlyPricing()
+
+
+def target_margin() -> Decimal:
+    """Целевая маржа; в интерфейсе — целые проценты."""
+    margin_pct = int(st.session_state.get(TARGET_MARGIN_PCT, DEFAULT_TARGET_MARGIN_PCT))
+    return Decimal(margin_pct) / PERCENT
+
+
+def vat_mode() -> VatMode:
+    """Как указаны цены проекта."""
+    return VatMode(st.session_state.get(VAT_MODE, VatMode.ON_TOP.value))
 
 
 def project(duty_disbursements: list[Disbursement]) -> Project:
@@ -181,6 +237,9 @@ def project(duty_disbursements: list[Disbursement]) -> Project:
     Args:
         duty_disbursements: Пошлины из каталогов; идут перед произвольными
             расходами, как в v0.3.
+
+    Raises:
+        pydantic.ValidationError: Потолок или согласованная цена не заданы (0).
     """
     calc_country = st.session_state.get(CALC_COUNTRY)
     return Project(
@@ -188,6 +247,8 @@ def project(duty_disbursements: list[Disbursement]) -> Project:
         client=text(PROJECT_CLIENT),
         description=text(PROJECT_DESCRIPTION),
         pricing=pricing(),
+        target_margin=target_margin(),
+        vat_mode=vat_mode(),
         stages=tuple(stages()),
         disbursements=(*duty_disbursements, *custom_expenses()),
         calc_country=None if calc_country is None else Country(calc_country),
