@@ -87,7 +87,7 @@ def test_billing_taxable_base_excludes_disbursements(config_id: str) -> None:
 @pytest.mark.parametrize("pricing_id", PRICING)
 @pytest.mark.parametrize("config_id", TAX_CONFIGS)
 def test_project_extra_expense_is_lost(config_id: str, pricing_id: str) -> None:
-    # KNOWN-BUG L-12 → фаза 1: расход категории «Прочее» есть в project_expenses,
+    # KNOWN-BUG L-12 → фаза 2: расход категории «Прочее» есть в project_expenses,
     # но не попадает ни в NNE, ни в фикс-цену.
     with_extra = run(config_id, pricing_id)
     assert any(e["category"] == "project_extra" for e in with_extra["project_expenses"])
@@ -152,3 +152,27 @@ def vat_rate(config_id: str) -> float:
         "KZ_OUR_ip_vat16": 0.16,
     }
     return rates.get(config_id, 0.0)
+
+
+def test_regime_label_leaks_internal_key() -> None:
+    # KNOWN-BUG L-18 → фаза 6: в подпись режима (UI и смета) попадает ключ объекта УСН.
+    assert run("RF_USN_income", "billing")["regime_label"] == "УСН income (6%)"
+    label = run("RF_USN_income_expenses", "billing")["regime_label"]
+    assert label == "УСН income_minus_expenses (15%)"
+
+
+def test_dashboard_effective_tax_rate_uses_invoice_total() -> None:
+    # KNOWN-BUG L-15 → фаза 2: эффективная ставка делится на услуги + пошлины,
+    # а маржа NNE — только на услуги.
+    r = run("RF_USN_income", "billing")
+    view = dashboard_view(r)
+    assert view["effective_tax_rate_pct"] == pytest.approx(r["tax"] / r["total_client"] * 100)
+    assert view["nne_margin_pct"] == pytest.approx(r["nne"] / r["gross_revenue"] * 100)
+
+
+def test_dashboard_row_margin_ignores_overheads_and_tax() -> None:
+    # KNOWN-BUG L-19 → фаза 2: маржа строки этапа = (ставка − себестоимость) / ставка.
+    r = run("RF_OSNO", "billing")
+    for row, member in zip(dashboard_view(r)["stage_rows"], r["team_with_hours"], strict=True):
+        billing, cost = member["billing_rate"], member["cost_rate"]
+        assert row["margin_pct"] == pytest.approx((billing - cost) / billing * 100)
