@@ -51,17 +51,18 @@ print(estimate.nne, dashboard(estimate).profitability)
 src/rentab_core/   расчётное ядро (без зависимостей от UI): модели, налоги,
                    ценообразование, аналитика, смета XLSX, реестр ставок
 app/               интерфейс на Streamlit; только вызывает ядро и рисует
-tests/             core/ — тесты ядра, characterization/ — поведение v0.3 и
-                   эквивалентность ядра, app/ — smoke-тесты интерфейса
+tests/             core/ — тесты ядра и golden-сценарии, characterization/ —
+                   поведение v0.3 и мост «было/стало», app/ — smoke-тесты интерфейса
 legacy/rentab_v03/ замороженная копия v0.3 — эталон для сравнения
-docs/              ROADMAP, аудит v0.3, ADR, скриншоты; позже — методология
+docs/              методология, ROADMAP, аудит v0.3, ADR, скриншоты
 ```
 
 Данные фирмы приложение хранит только в сессии браузера и ничего не пишет на
 диск сервера.
 
-Почему цифры v1.0 будут отличаться от v0.3, объясняет
-[docs/legacy_audit.md](docs/legacy_audit.md).
+Формулы расчёта и разобранные примеры — [docs/methodology.md](docs/methodology.md).
+Почему цифры отличаются от v0.3 — [docs/legacy_audit.md](docs/legacy_audit.md) и
+[docs/phase2_before_after.md](docs/phase2_before_after.md).
 
 ## English summary
 

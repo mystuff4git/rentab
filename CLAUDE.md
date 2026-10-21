@@ -51,7 +51,8 @@ uv run ruff format               # форматирование (в CI — ruff 
 uv run mypy                      # типы (strict)
 uv run pytest                    # все тесты + покрытие ядра (порог 90%)
 uv run pytest --no-cov -k slide3 # быстрый прогон части тестов
-uv run pytest --update-snapshots # перезаписать снимки characterization — только осознанно
+uv run pytest --update-snapshots # перезаписать снимки и мост «было/стало» — только осознанно
+uv run python -m tests.characterization.bridge  # перегенерировать docs/phase2_before_after.md
 uv run streamlit run app/Home.py # приложение (конфиг — .streamlit/config.toml в корне)
 ```
 
@@ -61,10 +62,17 @@ uv run streamlit run app/Home.py # приложение (конфиг — .strea
 - `tests/characterization/` фиксирует выходы v0.3: сценарии в `scenarios/*.json`,
   снимки в `snapshots/`. Изменение снимка = изменение цифр: в PR его объясняют
   ссылкой на `L-NN`. Тесты заведомо неверного поведения помечены `KNOWN-BUG L-NN → фаза N`.
-- Эквивалентность ядра и v0.3: `tests/characterization/core_adapter.py` (формат v0.3 ↔
-  модели ядра), `test_core_equivalence.py` (все снимки, допуск 1 коп.),
-  `test_core_vs_legacy.py` (случайные сценарии против живого v0.3). Ядро о формате v0.3
-  не знает. В фазе 2 расхождения со снимками — ожидаемые, каждое объясняется в PR.
-- Тесты ядра — `tests/core/`, smoke-тесты интерфейса — `tests/app/` (`streamlit.testing`,
-  запуск с `Home.py` и `switch_page`).
+- Ядро против v0.3 (с фазы 2 цифры различаются осознанно):
+  - `tests/characterization/core_adapter.py` переводит сценарии v0.3 в модели ядра:
+    `FINAL` — правила фазы 2 (cost_rate v0.3 = контрактный час, u = 0,65), `NEUTRAL` —
+    ядро видит те же числа, что v0.3. Ядро о формате v0.3 не знает.
+  - `test_core_snapshots.py` — снимки ядра в `snapshots/core/` (снимки v0.3 не трогать).
+  - `bridge.py` раскладывает каждое расхождение с v0.3 по шагам L-NN и генерирует
+    `docs/phase2_before_after.md`; `test_phase2_bridge.py` проверяет мост и документ.
+  - `test_core_vs_legacy.py` — 300 случайных сценариев против живого v0.3: при `NEUTRAL`
+    разница только в налоговой методологии (НДС, минимальный налог).
+  - Изменили формулу — обновить снимки ядра (`--update-snapshots`), перегенерировать
+    мост и объяснить diff в PR.
+- Тесты ядра — `tests/core/` (golden: примеры `methodology.md` и слайд 3), smoke-тесты
+  интерфейса — `tests/app/` (`streamlit.testing`, запуск с `Home.py` и `switch_page`).
 - Архитектурные решения — `docs/adr/`.

@@ -435,7 +435,7 @@ with tab_team:
                 min_value=1.0,
                 max_value=100.0,
                 step=5.0,
-                format="%.0f",
+                format="%.1f",
                 key="add_member_utilization_pct",
                 help=(
                     "Доля контрактных часов, которую фирма продаёт клиентам. "
@@ -494,7 +494,7 @@ with tab_team:
             cells[3].write(f"{cost.monthly_cost:,.0f} {sym}")
             cells[4].write(f"{cost.contract_cost_rate:,.0f} {sym}")
             cells[5].write(f"{cost.cost_rate:,.0f} {sym}")
-            cells[6].write(f"{member.target_utilization * PERCENT:.0f}%")
+            cells[6].write(f"{member.target_utilization * PERCENT:.1f}%")
             if cells[7].button("🗑", key=f"del_member_{idx}", help="Удалить"):
                 team_list.pop(idx)
                 st.rerun()
@@ -608,7 +608,7 @@ with tab_exp:
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Контрактные часы", f"{contract_total:,.0f} ч/мес")
     m2.metric("Биллируемая ёмкость", f"{capacity_total:,.1f} ч/мес")
-    m3.metric("Утилизация фирмы", f"{utilization:.0f}%")
+    m3.metric("Утилизация фирмы", f"{utilization:.1f}%")
     m4.metric(f"Ставка накладных, {sym}/ч", f"{oh_rate:,.1f}")
     st.caption(
         f"Накладные в месяц: **{total_monthly:,.0f} {sym}** · Ставка накладных = накладные ÷ "
