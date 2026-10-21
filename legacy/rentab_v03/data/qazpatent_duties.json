@@ -1,0 +1,86 @@
+[
+  {
+    "action": "Подача заявки на изобретение",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Экспертиза заявки на изобретение по существу",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Выдача патента на изобретение",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Подача заявки на полезную модель",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Выдача патента на полезную модель",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Подача заявки на промышленный образец",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Выдача патента на промышленный образец",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Подача заявки на товарный знак (1 класс МКТУ)",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Экспертиза товарного знака по существу (1 класс МКТУ)",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Регистрация товарного знака и выдача свидетельства",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Продление срока действия регистрации товарного знака",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  },
+  {
+    "action": "Регистрация договора об уступке / лицензии на объект ИС",
+    "amount": 0,
+    "currency": "KZT",
+    "category": "disbursement_billable",
+    "note": "# TODO: уточнить на сайте QazPatent"
+  }
+]
