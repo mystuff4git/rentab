@@ -1,0 +1,92 @@
+{
+  "dashboard": {
+    "actual_margin_pct": 30.0,
+    "price_structure": {
+      "direct_labor": 80000.0,
+      "indirect": 12500.0,
+      "profit": 43359.375,
+      "tax": 8671.875
+    },
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "flag": "yellow",
+        "hours": 10.0,
+        "stage_costs": 55000.0,
+        "stage_margin_pct": 4.864865,
+        "stage_name": "Подготовка",
+        "stage_revenue_share": 57812.5
+      },
+      {
+        "flag": "green",
+        "hours": 15.0,
+        "stage_costs": 37500.0,
+        "stage_margin_pct": 56.756757,
+        "stage_name": "Регистрация",
+        "stage_revenue_share": 86718.75
+      }
+    ],
+    "target_margin_pct": 30.0
+  },
+  "results": {
+    "actual_margin": 0.3,
+    "blended_rate": 0.0,
+    "calc_country": "RF",
+    "client": "",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "",
+    "direct_labor": 80000.0,
+    "disbursements": 0,
+    "disbursements_own": 0.0,
+    "fixed_price": 144531.25,
+    "jurisdiction_mode": "RF",
+    "leverage": 1.5,
+    "nne": 43359.375,
+    "overhead_rate": 500.0,
+    "overheads_alloc": 12500.0,
+    "pricing_model": "fixed",
+    "project_expenses": [],
+    "project_name": "Контрольный сценарий v0.3 — фикс",
+    "regime_label": "УСН income (6%)",
+    "stage_flags": [
+      {
+        "flag": "yellow",
+        "stage_costs": 55000.0,
+        "stage_margin": 0.048649,
+        "stage_name": "Подготовка",
+        "stage_revenue_share": 57812.5
+      },
+      {
+        "flag": "green",
+        "stage_costs": 37500.0,
+        "stage_margin": 0.567568,
+        "stage_name": "Регистрация",
+        "stage_revenue_share": 86718.75
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 8671.875,
+    "team_with_hours": [
+      {
+        "billing_rate": 0.0,
+        "cost_rate": 5000.0,
+        "hours": 10.0,
+        "name": "Иванов",
+        "role": "Партнёр",
+        "stage_name": "Подготовка"
+      },
+      {
+        "billing_rate": 0.0,
+        "cost_rate": 2000.0,
+        "hours": 15.0,
+        "name": "Петрова",
+        "role": "Младший юрист",
+        "stage_name": "Регистрация"
+      }
+    ],
+    "total_costs": 92500.0,
+    "total_hours": 25.0
+  },
+  "warnings": []
+}

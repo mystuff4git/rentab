@@ -1,0 +1,163 @@
+{
+  "dashboard": {
+    "actual_margin_pct": 30.0,
+    "price_structure": {
+      "direct_labor": 63500.0,
+      "indirect": 10968.75,
+      "profit": 72849.863515,
+      "tax": 95514.265759
+    },
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "flag": "green",
+        "hours": 6.0,
+        "stage_costs": 23812.5,
+        "stage_margin_pct": 72.215974,
+        "stage_name": "Поиск по базам и анализ охраноспособности",
+        "stage_revenue_share": 85705.722097
+      },
+      {
+        "flag": "green",
+        "hours": 4.0,
+        "stage_costs": 23875.0,
+        "stage_margin_pct": 58.214575,
+        "stage_name": "Подготовка и подача заявки",
+        "stage_revenue_share": 57137.148065
+      },
+      {
+        "flag": "green",
+        "hours": 2.0,
+        "stage_costs": 16937.5,
+        "stage_margin_pct": 40.712827,
+        "stage_name": "Ответ на уведомление экспертизы",
+        "stage_revenue_share": 28568.574032
+      },
+      {
+        "flag": "green",
+        "hours": 5.0,
+        "stage_costs": 6843.75,
+        "stage_margin_pct": 90.417793,
+        "stage_name": "Сопровождение регистрации",
+        "stage_revenue_share": 71421.435081
+      }
+    ],
+    "target_margin_pct": 30.0
+  },
+  "results": {
+    "actual_margin": 0.3,
+    "blended_rate": 6970.588235,
+    "calc_country": "RF",
+    "client": "ООО «Ромашка»",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "Классы МКТУ 05, 30",
+    "direct_labor": 63500.0,
+    "disbursements": 38500.0,
+    "disbursements_own": 3000.0,
+    "fixed_price": 242832.879275,
+    "jurisdiction_mode": "RF",
+    "leverage": 1.833333,
+    "nne": 72849.863515,
+    "overhead_rate": 468.75,
+    "overheads_alloc": 7968.75,
+    "pricing_model": "fixed",
+    "project_expenses": [
+      {
+        "amount": 38500.0,
+        "billable": true,
+        "category": "disbursement_billable",
+        "currency": "RUB",
+        "name": "Пошлины Роспатента: ТЗ, 2 класса МКТУ",
+        "period": "one-time"
+      },
+      {
+        "amount": 3000.0,
+        "billable": false,
+        "category": "disbursement_own",
+        "currency": "RUB",
+        "name": "Курьерская доставка оригиналов",
+        "period": "one-time"
+      },
+      {
+        "amount": 7000.0,
+        "billable": false,
+        "category": "project_extra",
+        "currency": "RUB",
+        "name": "Нотариальный перевод доверенности",
+        "period": "one-time"
+      }
+    ],
+    "project_name": "Регистрация товарного знака «Ромашка»",
+    "regime_label": "ОСНО (прибыль 25% + НДС 22%)",
+    "stage_flags": [
+      {
+        "flag": "green",
+        "stage_costs": 23812.5,
+        "stage_margin": 0.72216,
+        "stage_name": "Поиск по базам и анализ охраноспособности",
+        "stage_revenue_share": 85705.722097
+      },
+      {
+        "flag": "green",
+        "stage_costs": 23875.0,
+        "stage_margin": 0.582146,
+        "stage_name": "Подготовка и подача заявки",
+        "stage_revenue_share": 57137.148065
+      },
+      {
+        "flag": "green",
+        "stage_costs": 16937.5,
+        "stage_margin": 0.407128,
+        "stage_name": "Ответ на уведомление экспертизы",
+        "stage_revenue_share": 28568.574032
+      },
+      {
+        "flag": "green",
+        "stage_costs": 6843.75,
+        "stage_margin": 0.904178,
+        "stage_name": "Сопровождение регистрации",
+        "stage_revenue_share": 71421.435081
+      }
+    ],
+    "target_margin": 0.3,
+    "tax": 95514.265759,
+    "team_with_hours": [
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 3500.0,
+        "hours": 6.0,
+        "name": "Сидоров К.",
+        "role": "Младший юрист",
+        "stage_name": "Поиск по базам и анализ охраноспособности"
+      },
+      {
+        "billing_rate": 10000.0,
+        "cost_rate": 5500.0,
+        "hours": 4.0,
+        "name": "Петрова М.",
+        "role": "Старший юрист",
+        "stage_name": "Подготовка и подача заявки"
+      },
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 8000.0,
+        "hours": 2.0,
+        "name": "Иванов А.",
+        "role": "Партнёр",
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 2500.0,
+        "cost_rate": 900.0,
+        "hours": 5.0,
+        "name": "Кузнецова Е.",
+        "role": "Стажёр",
+        "stage_name": "Сопровождение регистрации"
+      }
+    ],
+    "total_costs": 74468.75,
+    "total_hours": 17.0
+  },
+  "warnings": []
+}

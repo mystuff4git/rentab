@@ -1,0 +1,76 @@
+{
+  "dashboard": {
+    "effective_tax_rate_pct": 6.0,
+    "nne_margin_pct": 31.878788,
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "billing_rate": 15000.0,
+        "executor": "Иванов (Партнёр)",
+        "hours": 5.0,
+        "margin_pct": 46.666667,
+        "revenue": 75000.0,
+        "stage_name": "Анализ и стратегия"
+      },
+      {
+        "billing_rate": 6000.0,
+        "executor": "Петрова (Младший юрист)",
+        "hours": 15.0,
+        "margin_pct": 41.666667,
+        "revenue": 90000.0,
+        "stage_name": "Подготовка документов"
+      }
+    ],
+    "stage_totals": {
+      "hours": 20.0,
+      "margin_pct": 43.939394,
+      "revenue": 165000.0
+    }
+  },
+  "results": {
+    "blended_rate": 8250.0,
+    "calc_country": "RF",
+    "client": "",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "",
+    "direct_labor": 92500.0,
+    "disbursements": 0,
+    "disbursements_own": 0,
+    "gross_revenue": 165000.0,
+    "income_tax": 9900.0,
+    "jurisdiction_mode": "RF",
+    "leverage": 3.0,
+    "nne": 52600.0,
+    "overhead_rate": 500.0,
+    "overheads_alloc": 10000.0,
+    "pricing_model": "billing",
+    "project_expenses": [],
+    "project_name": "Контрольный сценарий v0.3 — биллинг",
+    "regime_label": "УСН income (6%)",
+    "tax": 9900.0,
+    "taxable_base": 165000.0,
+    "team_with_hours": [
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 8000.0,
+        "hours": 5.0,
+        "name": "Иванов",
+        "role": "Партнёр",
+        "stage_name": "Анализ и стратегия"
+      },
+      {
+        "billing_rate": 6000.0,
+        "cost_rate": 3500.0,
+        "hours": 15.0,
+        "name": "Петрова",
+        "role": "Младший юрист",
+        "stage_name": "Подготовка документов"
+      }
+    ],
+    "total_client": 165000.0,
+    "total_hours": 20.0,
+    "vat": 0.0
+  },
+  "warnings": []
+}

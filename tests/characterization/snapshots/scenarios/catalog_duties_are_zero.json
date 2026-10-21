@@ -1,0 +1,60 @@
+{
+  "dashboard": {
+    "effective_tax_rate_pct": 6.0,
+    "nne_margin_pct": 34.0,
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "billing_rate": 10000.0,
+        "executor": "Петрова (Старший юрист)",
+        "hours": 4.0,
+        "margin_pct": 45.0,
+        "revenue": 40000.0,
+        "stage_name": "Подготовка и подача заявки"
+      }
+    ],
+    "stage_totals": {
+      "hours": 4.0,
+      "margin_pct": 45.0,
+      "revenue": 40000.0
+    }
+  },
+  "results": {
+    "blended_rate": 10000.0,
+    "calc_country": "RF",
+    "client": "",
+    "currency": "₽",
+    "currency_code": "RUB",
+    "description": "",
+    "direct_labor": 22000.0,
+    "disbursements": 0,
+    "disbursements_own": 0,
+    "gross_revenue": 40000.0,
+    "income_tax": 2400.0,
+    "jurisdiction_mode": "RF",
+    "leverage": 0.0,
+    "nne": 13600.0,
+    "overhead_rate": 500.0,
+    "overheads_alloc": 2000.0,
+    "pricing_model": "billing",
+    "project_expenses": [],
+    "project_name": "Подача заявки на ТЗ",
+    "regime_label": "УСН income (6%)",
+    "tax": 2400.0,
+    "taxable_base": 40000.0,
+    "team_with_hours": [
+      {
+        "billing_rate": 10000.0,
+        "cost_rate": 5500.0,
+        "hours": 4.0,
+        "name": "Петрова",
+        "role": "Старший юрист",
+        "stage_name": "Подготовка и подача заявки"
+      }
+    ],
+    "total_client": 40000.0,
+    "total_hours": 4.0,
+    "vat": 0.0
+  },
+  "warnings": []
+}

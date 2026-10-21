@@ -1,0 +1,54 @@
+{
+  "id": "slide3",
+  "description": "Слайд 3 защиты ВКР: проект с фиксированной выручкой 300 000 ₽, УСН 6% + НДС 5%, накладные 100 ₽/ч. В UI v0.3 выручку нельзя задать вручную, поэтому сценарий считается функциями модулей v0.3 напрямую.",
+  "known_bugs": [
+    "L-02"
+  ],
+  "revenue": 300000.0,
+  "tax_params": {
+    "country": "RF",
+    "regime": "USN",
+    "object": "income",
+    "vat": "5%",
+    "social_contributions": "standard"
+  },
+  "overheads_monthly": 16000.0,
+  "billable_hours_per_month": 160.0,
+  "cost_rates": {
+    "Партнёр": 4000.0,
+    "Юрист": 1500.0,
+    "Стажёр": 500.0
+  },
+  "variants": {
+    "plan": {
+      "description": "План",
+      "hours": {
+        "Партнёр": 5.0,
+        "Юрист": 15.0,
+        "Стажёр": 20.0
+      },
+      "expected_v03": {
+        "direct_labor": 52500.0,
+        "overheads_alloc": 4000.0,
+        "income_tax": 18000.0,
+        "vat": 15000.0,
+        "nne": 210500.0
+      }
+    },
+    "fact": {
+      "description": "Факт: «партнёр тянет проект»",
+      "hours": {
+        "Партнёр": 62.0,
+        "Юрист": 15.0,
+        "Стажёр": 10.0
+      },
+      "expected_v03": {
+        "direct_labor": 275500.0,
+        "overheads_alloc": 8700.0,
+        "income_tax": 18000.0,
+        "vat": 15000.0,
+        "nne": -17200.0
+      }
+    }
+  }
+}

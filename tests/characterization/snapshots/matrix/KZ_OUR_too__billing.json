@@ -1,0 +1,133 @@
+{
+  "dashboard": {
+    "effective_tax_rate_pct": 6.13676,
+    "nne_margin_pct": 29.725738,
+    "profitability": "рентабелен",
+    "stage_rows": [
+      {
+        "billing_rate": 36000.0,
+        "executor": "Ким В. (Младший юрист)",
+        "hours": 6.0,
+        "margin_pct": 41.666667,
+        "revenue": 216000.0,
+        "stage_name": "Поиск по базам и анализ охраноспособности"
+      },
+      {
+        "billing_rate": 60000.0,
+        "executor": "Сапарова А. (Старший юрист)",
+        "hours": 4.0,
+        "margin_pct": 45.0,
+        "revenue": 240000.0,
+        "stage_name": "Подготовка и подача заявки"
+      },
+      {
+        "billing_rate": 90000.0,
+        "executor": "Ахметов Д. (Партнёр)",
+        "hours": 2.0,
+        "margin_pct": 46.666667,
+        "revenue": 180000.0,
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 15000.0,
+        "executor": "Нурланова Ж. (Стажёр)",
+        "hours": 5.0,
+        "margin_pct": 64.0,
+        "revenue": 75000.0,
+        "stage_name": "Сопровождение регистрации"
+      }
+    ],
+    "stage_totals": {
+      "hours": 17.0,
+      "margin_pct": 46.413502,
+      "revenue": 711000.0
+    }
+  },
+  "results": {
+    "blended_rate": 41823.529412,
+    "calc_country": "KZ",
+    "client": "ТОО «Жусан»",
+    "currency": "₸",
+    "currency_code": "KZT",
+    "description": "Классы МКТУ 05, 30",
+    "direct_labor": 381000.0,
+    "disbursements": 150000.0,
+    "disbursements_own": 18000.0,
+    "gross_revenue": 711000.0,
+    "income_tax": 52837.5,
+    "jurisdiction_mode": "KZ",
+    "leverage": 1.833333,
+    "nne": 211350.0,
+    "overhead_rate": 2812.5,
+    "overheads_alloc": 47812.5,
+    "pricing_model": "billing",
+    "project_expenses": [
+      {
+        "amount": 150000.0,
+        "billable": true,
+        "category": "disbursement_billable",
+        "currency": "KZT",
+        "name": "Пошлины Казпатента: ТЗ, 1 класс МКТУ",
+        "period": "one-time"
+      },
+      {
+        "amount": 18000.0,
+        "billable": false,
+        "category": "disbursement_own",
+        "currency": "KZT",
+        "name": "Курьерская доставка оригиналов",
+        "period": "one-time"
+      },
+      {
+        "amount": 42000.0,
+        "billable": false,
+        "category": "project_extra",
+        "currency": "KZT",
+        "name": "Нотариальный перевод доверенности",
+        "period": "one-time"
+      }
+    ],
+    "project_name": "Регистрация товарного знака «Жусан»",
+    "regime_label": "ОУР — ТОО (КПН) 20%",
+    "tax": 52837.5,
+    "taxable_base": 711000.0,
+    "team_with_hours": [
+      {
+        "billing_rate": 36000.0,
+        "cost_rate": 21000.0,
+        "hours": 6.0,
+        "name": "Ким В.",
+        "role": "Младший юрист",
+        "stage_name": "Поиск по базам и анализ охраноспособности"
+      },
+      {
+        "billing_rate": 60000.0,
+        "cost_rate": 33000.0,
+        "hours": 4.0,
+        "name": "Сапарова А.",
+        "role": "Старший юрист",
+        "stage_name": "Подготовка и подача заявки"
+      },
+      {
+        "billing_rate": 90000.0,
+        "cost_rate": 48000.0,
+        "hours": 2.0,
+        "name": "Ахметов Д.",
+        "role": "Партнёр",
+        "stage_name": "Ответ на уведомление экспертизы"
+      },
+      {
+        "billing_rate": 15000.0,
+        "cost_rate": 5400.0,
+        "hours": 5.0,
+        "name": "Нурланова Ж.",
+        "role": "Стажёр",
+        "stage_name": "Сопровождение регистрации"
+      }
+    ],
+    "total_client": 861000.0,
+    "total_hours": 17.0,
+    "vat": 0.0
+  },
+  "warnings": []
+}

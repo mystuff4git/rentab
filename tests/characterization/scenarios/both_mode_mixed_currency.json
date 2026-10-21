@@ -1,0 +1,100 @@
+{
+  "id": "both_mode_mixed_currency",
+  "description": "Режим «Оба» (РФ + РК), налог считается по РФ. Накладные и пошлины в RUB и KZT складываются без конвертации.",
+  "known_bugs": [
+    "L-06"
+  ],
+  "pricing_model": "billing",
+  "jurisdiction_params": {
+    "jurisdiction": "Both",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": {
+      "country": "KZ",
+      "regime": "OUR",
+      "form": "too",
+      "vat": "none"
+    },
+    "exchange_rate_rub_per_kzt": 0.18
+  },
+  "calc_country": "RF",
+  "billable_hours_per_month": 320.0,
+  "team": [
+    {
+      "name": "Иванов А.",
+      "role": "Партнёр",
+      "billing_rate": 15000.0,
+      "cost_rate": 8000.0
+    },
+    {
+      "name": "Сидоров К.",
+      "role": "Младший юрист",
+      "billing_rate": 6000.0,
+      "cost_rate": 3500.0
+    }
+  ],
+  "stages": [
+    {
+      "name": "Регистрация ТЗ в РФ",
+      "executor": "Сидоров К.",
+      "hours": 8.0
+    },
+    {
+      "name": "Регистрация ТЗ в РК",
+      "executor": "Сидоров К.",
+      "hours": 6.0
+    },
+    {
+      "name": "Контроль качества",
+      "executor": "Иванов А.",
+      "hours": 2.0
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда офиса в Москве",
+      "category": "overhead",
+      "amount": 120000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    },
+    {
+      "name": "Аренда офиса в Алматы",
+      "category": "overhead",
+      "amount": 300000.0,
+      "currency": "KZT",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "selected_duties": {},
+  "custom_expenses": [
+    {
+      "name": "Пошлины Роспатента: ТЗ, 2 класса МКТУ",
+      "category": "disbursement_billable",
+      "amount": 38500.0,
+      "currency": "RUB",
+      "period": "one-time",
+      "billable": true
+    },
+    {
+      "name": "Пошлины Казпатента: ТЗ, 1 класс МКТУ",
+      "category": "disbursement_billable",
+      "amount": 120000.0,
+      "currency": "KZT",
+      "period": "one-time",
+      "billable": true
+    }
+  ],
+  "project": {
+    "name": "Регистрация ТЗ в РФ и РК",
+    "client": "ООО «Евразия»",
+    "description": ""
+  }
+}

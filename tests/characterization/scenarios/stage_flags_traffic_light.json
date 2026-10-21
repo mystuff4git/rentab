@@ -1,0 +1,87 @@
+{
+  "id": "stage_flags_traffic_light",
+  "description": "Фикс-прайс с четырьмя этапами, дающими все три цвета светофора (red, yellow, green).",
+  "known_bugs": [
+    "L-04"
+  ],
+  "pricing_model": "fixed",
+  "target_margin_pct": 30,
+  "jurisdiction_params": {
+    "jurisdiction": "RF",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": null,
+    "exchange_rate_rub_per_kzt": null
+  },
+  "billable_hours_per_month": 160.0,
+  "team": [
+    {
+      "name": "Иванов",
+      "role": "Партнёр",
+      "billing_rate": 15000.0,
+      "cost_rate": 8000.0
+    },
+    {
+      "name": "Петрова",
+      "role": "Старший юрист",
+      "billing_rate": 10000.0,
+      "cost_rate": 3500.0
+    },
+    {
+      "name": "Сидоров",
+      "role": "Младший юрист",
+      "billing_rate": 6000.0,
+      "cost_rate": 2000.0
+    },
+    {
+      "name": "Кузнецова",
+      "role": "Стажёр",
+      "billing_rate": 2500.0,
+      "cost_rate": 600.0
+    }
+  ],
+  "stages": [
+    {
+      "name": "Стратегия защиты",
+      "executor": "Иванов",
+      "hours": 10.0
+    },
+    {
+      "name": "Подготовка возражения",
+      "executor": "Петрова",
+      "hours": 15.0
+    },
+    {
+      "name": "Сбор доказательств",
+      "executor": "Сидоров",
+      "hours": 30.0
+    },
+    {
+      "name": "Оформление приложений",
+      "executor": "Кузнецова",
+      "hours": 20.0
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда + ПО",
+      "category": "overhead",
+      "amount": 80000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "selected_duties": {},
+  "custom_expenses": [],
+  "project": {
+    "name": "Возражение против отказа в регистрации",
+    "client": "ООО «Пример»",
+    "description": ""
+  }
+}

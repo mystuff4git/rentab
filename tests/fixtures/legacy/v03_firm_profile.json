@@ -1,0 +1,83 @@
+{
+  "jurisdiction_params": {
+    "jurisdiction": "RF",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": null,
+    "exchange_rate_rub_per_kzt": null
+  },
+  "team": [
+    {
+      "name": "Иванов А.",
+      "role": "Партнёр",
+      "billing_rate": 15000.0,
+      "cost_rate": 3095.2380952380954,
+      "gross_salary": 400000.0,
+      "contract_hours_per_month": 168.0,
+      "employer_contribution_rate": 0.3
+    },
+    {
+      "name": "Петрова М.",
+      "role": "Старший юрист",
+      "billing_rate": 10000.0,
+      "cost_rate": 1934.5238095238096,
+      "gross_salary": 250000.0,
+      "contract_hours_per_month": 168.0,
+      "employer_contribution_rate": 0.3
+    },
+    {
+      "name": "Сидоров К.",
+      "role": "Младший юрист",
+      "billing_rate": 6000.0,
+      "cost_rate": 1160.7142857142858,
+      "gross_salary": 150000.0,
+      "contract_hours_per_month": 168.0,
+      "employer_contribution_rate": 0.3
+    },
+    {
+      "name": "Кузнецова Е.",
+      "role": "Стажёр",
+      "billing_rate": 2500.0,
+      "cost_rate": 650.0,
+      "gross_salary": 60000.0,
+      "contract_hours_per_month": 120.0,
+      "employer_contribution_rate": 0.3
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда офиса",
+      "category": "overhead",
+      "amount": 120000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    },
+    {
+      "name": "КонсультантПлюс",
+      "category": "overhead",
+      "amount": 180000.0,
+      "currency": "RUB",
+      "period": "annual",
+      "billable": false
+    },
+    {
+      "name": "Облачные сервисы",
+      "category": "overhead",
+      "amount": 15000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "billable_hours_per_month": 400.0,
+  "contract_hours_total": 624.0,
+  "exchange_rate_rub_per_kzt": 0.18,
+  "pricing_model": "Фиксированная (издержки + маржа)",
+  "target_margin": 30
+}

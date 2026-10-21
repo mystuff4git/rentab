@@ -1,0 +1,65 @@
+{
+  "id": "legacy_fixed_basic",
+  "description": "Сценарий 2 из legacy/rentab_v03/test_scenario.py: фикс-прайс, целевая маржа 30%, УСН «Доходы» 6%.",
+  "known_bugs": [
+    "L-04"
+  ],
+  "pricing_model": "fixed",
+  "target_margin_pct": 30,
+  "jurisdiction_params": {
+    "jurisdiction": "RF",
+    "rf": {
+      "country": "RF",
+      "regime": "USN",
+      "object": "income",
+      "vat": "none",
+      "social_contributions": "standard"
+    },
+    "kz": null,
+    "exchange_rate_rub_per_kzt": null
+  },
+  "billable_hours_per_month": 160.0,
+  "team": [
+    {
+      "name": "Иванов",
+      "role": "Партнёр",
+      "billing_rate": 0.0,
+      "cost_rate": 5000.0
+    },
+    {
+      "name": "Петрова",
+      "role": "Младший юрист",
+      "billing_rate": 0.0,
+      "cost_rate": 2000.0
+    }
+  ],
+  "stages": [
+    {
+      "name": "Подготовка",
+      "executor": "Иванов",
+      "hours": 10.0
+    },
+    {
+      "name": "Регистрация",
+      "executor": "Петрова",
+      "hours": 15.0
+    }
+  ],
+  "firm_expenses": [
+    {
+      "name": "Аренда + ПО",
+      "category": "overhead",
+      "amount": 80000.0,
+      "currency": "RUB",
+      "period": "monthly",
+      "billable": false
+    }
+  ],
+  "selected_duties": {},
+  "custom_expenses": [],
+  "project": {
+    "name": "Контрольный сценарий v0.3 — фикс",
+    "client": "",
+    "description": ""
+  }
+}
