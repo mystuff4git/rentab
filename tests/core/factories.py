@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from rentab_core.models import (
+    ActualHours,
     Assignment,
     Disbursement,
     DisbursementKind,
@@ -18,6 +19,7 @@ from rentab_core.models import (
     Period,
     PricingModel,
     Project,
+    ProjectActuals,
     Role,
     Scenario,
     Stage,
@@ -127,3 +129,14 @@ def basic_scenario(
 def fixed(price: Decimal | str | int | None = None) -> FixedPricing:
     """Фиксированная цена: «издержки + маржа» или согласованная."""
     return FixedPricing(price=None if price is None else d(price))
+
+
+def actuals(*rows: tuple[str, str, str | int], billed: str | int | None = None) -> ProjectActuals:
+    """Факт проекта: строки (этап, сотрудник, часы) и, если задано, выставленная сумма."""
+    return ProjectActuals(
+        hours=tuple(
+            ActualHours(stage=stage_name, employee=who, hours=d(hours))
+            for stage_name, who, hours in rows
+        ),
+        billed=None if billed is None else d(billed),
+    )

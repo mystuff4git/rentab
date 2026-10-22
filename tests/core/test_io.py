@@ -35,6 +35,7 @@ from rentab_core.io.files import _error_message
 from rentab_core.io.migrations import MIGRATIONS, RawProfile, info, upgrade
 from rentab_core.io.schema import json_schema_text, main
 from rentab_core.models import (
+    ActualHours,
     Assignment,
     CappedPricing,
     Country,
@@ -57,6 +58,7 @@ from rentab_core.models import (
     Period,
     PricingModel,
     Project,
+    ProjectActuals,
     Role,
     Salary,
     SocialContributions,
@@ -67,7 +69,7 @@ from rentab_core.models import (
     VatMode,
 )
 from rentab_core.money import Currency, round_to
-from tests.core.factories import d
+from tests.core.factories import actuals, d, stage
 
 SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "profile.schema.json"
 EXPORTED_AT = dt.datetime(2026, 10, 22, 15, 0, tzinfo=dt.UTC)
@@ -283,6 +285,28 @@ def projects(draw: st.DrawFn) -> ProjectRecord:
         )
     )
     actions = [duty.action for duty in load_catalog(Country.RF).duties]
+    fact_rows = draw(
+        st.lists(
+            st.tuples(st.sampled_from(stage_names), st.sampled_from(["Партнёр", "Юрист"])),
+            unique=True,
+            max_size=4,
+        )
+        if stage_names
+        else st.just([])
+    )
+    project_actuals = draw(
+        st.none()
+        | st.builds(
+            ProjectActuals,
+            hours=st.just(
+                tuple(
+                    ActualHours(stage=stage_name, employee=who, hours=Decimal(len(who)))
+                    for stage_name, who in fact_rows
+                )
+            ),
+            billed=st.none() | positive_money,
+        )
+    )
     return ProjectRecord(
         project=Project(
             name=draw(st.text(max_size=30)),
@@ -293,6 +317,7 @@ def projects(draw: st.DrawFn) -> ProjectRecord:
             calc_country=draw(st.none() | st.sampled_from(Country)),
             stages=stages,
             disbursements=tuple(expenses),
+            actuals=project_actuals,
         ),
         duties={
             Country.RF: DutySelection(
@@ -580,3 +605,34 @@ def test_phase4_file_loads_unchanged() -> None:
     assert tuple(round_to(value) for value in nne) == PHASE4_NNE
     # Повторная выгрузка совпадает с файлом фазы 4: новые поля без значения не пишутся.
     assert dumps(workspace, exported_at=EXPORTED_AT) == data
+
+
+def test_actuals_round_trip_and_are_omitted_when_empty() -> None:
+    project = Project(
+        name="С фактом",
+        stages=(stage("Проект", ("Партнёр", 5)),),
+        actuals=actuals(("Проект", "Партнёр", 62), ("Проект", "Стажёр", 1), billed=280_000),
+    )
+    workspace = demo_workspace().model_copy(
+        update={"projects": (ProjectRecord(project=project), ProjectRecord())}
+    )
+    raw = raw_file(workspace)
+    assert raw["projects"][0]["project"]["actuals"] == {
+        "hours": [
+            {"stage": "Проект", "employee": "Партнёр", "hours": "62"},
+            {"stage": "Проект", "employee": "Стажёр", "hours": "1"},
+        ],
+        "billed": "280000",
+    }
+    # Проект без факта пишется без поля: такой файл читает и приложение фазы 4.
+    assert "actuals" not in raw["projects"][1]["project"]
+    assert loads(dumps(workspace)).workspace == workspace
+
+
+def test_actuals_on_unknown_stage_point_to_project() -> None:
+    raw = raw_file()
+    raw["projects"][0]["project"]["actuals"] = {
+        "hours": [{"stage": "Нет такого", "employee": "Партнёр", "hours": "1"}]
+    }
+    with pytest.raises(ProfileImportError, match=r"projects\[0\]\.project: Факт «Партнёр»"):
+        loads(encode(raw))

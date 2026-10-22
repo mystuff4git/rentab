@@ -21,6 +21,7 @@ from rentab_core.models import (
     OsnoProfile,
     Overhead,
     Period,
+    PricingModel,
     Project,
     Role,
     Scenario,
@@ -124,6 +125,20 @@ def test_agreed_fixed_price() -> None:
     estimate = calculate_estimate(basic_scenario(fixed(150_000)))
     assert estimate.revenue == d(150_000)
     assert estimate.nne == d(150_000) - d(102_500) - d(9_000)
+
+
+@pytest.mark.parametrize("pricing", [fixed(), CappedPricing(cap=d(10_000))])
+def test_revenue_given_from_outside(pricing: PricingModel) -> None:
+    # Цена держится (раздел 16.3) или выставлена вручную (раздел 18.2): смета —
+    # как у согласованной цены, модель цены проекта сохраняется.
+    scenario = basic_scenario(pricing)
+    estimate = calculate_estimate(scenario, revenue=d(150_000))
+    agreed = calculate_estimate(basic_scenario(fixed(150_000)))
+    assert estimate.pricing == scenario.project.pricing
+    assert estimate.revenue == d(150_000)
+    assert estimate.tax == agreed.tax
+    assert estimate.nne == agreed.nne
+    assert estimate.stages == agreed.stages
 
 
 def test_capped_fee() -> None:
