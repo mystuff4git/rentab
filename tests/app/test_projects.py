@@ -53,7 +53,7 @@ def test_demo_firm_fills_setup_and_project_pages() -> None:
     assert app.session_state[state.OVERHEADS] == list(demo_firm().overheads)
 
     app.switch_page(PROJECT_PAGE).run()
-    assert app.text_input(key=state.PROJECT_NAME).value == "Слайд 3: план"
+    assert app.text_input(key=state.PROJECT_NAME).value == "Слайд 3: план и факт"
     assert app.radio(key=state.PRICING_MODEL).value == state.PRICING_AGREED
     click(app, "💰 Рассчитать смету")
     estimate = app.session_state[state.ESTIMATE]
@@ -84,7 +84,7 @@ def test_projects_table_shows_last_estimate() -> None:
     app.switch_page("Home.py").run()
     table = app.dataframe[0].value
     assert list(table["Проект"]) == [record.project.name for record in demo_workspace().projects]
-    assert list(table[""]) == ["▶", "", "", "", ""]
+    assert list(table[""]) == ["▶", "", "", ""]
     assert table["NNE"][0] == "225 500 ₽"
     assert table["Маржа"][0] == "75.2%"
     assert table["NNE"][1] == "—"
@@ -97,7 +97,7 @@ def test_switching_projects_keeps_each_projects_values() -> None:
     app = demo_app(PROJECT_PAGE)
     ids = slot_ids(app)
     app.text_input(key=state.PROJECT_NAME).input("План, изменён").run()
-    switch(app, ids[2])
+    switch(app, ids[1])
     assert app.text_input(key=state.PROJECT_NAME).value == "Регистрация товарного знака"
     assert app.radio(key=state.PRICING_MODEL).value == state.PRICING_HOURLY
     classes = state.duty_quantity_key(Country.RF, Quantity.CLASSES)
@@ -118,7 +118,7 @@ def test_switching_projects_keeps_each_projects_values() -> None:
     assert app.number_input(key=state.AGREED_PRICE).value == 300_000
     assert app.session_state[state.SELECTED_DUTIES] == {"RF": [], "KZ": []}
 
-    switch(app, ids[2])
+    switch(app, ids[1])
     assert app.number_input(key=classes).value == 5
     click(app, "💰 Рассчитать смету")
     # 4 000 + 4 × 1 000 и 13 000 + 4 × 2 500 за пять классов.
@@ -132,13 +132,13 @@ def test_estimate_belongs_to_project() -> None:
     switch(app, ids[1])
     assert state.ESTIMATE not in app.session_state
     click(app, "💰 Рассчитать смету")
-    assert app.session_state[state.ESTIMATE].nne == d(-2_200)
+    assert app.session_state[state.ESTIMATE].nne == d(58_800)
 
     switch(app, ids[0])
     assert app.session_state[state.ESTIMATE].nne == d(225_500)
     app.switch_page("pages/03_Дашборд.py").run()
-    assert app.subheader[0].value == "Слайд 3: план"
-    switch(app, ids[3])
+    assert app.subheader[0].value == "Слайд 3: план и факт"
+    switch(app, ids[2])
     assert "Сначала сформируйте смету проекта «Патентование изобретения»" in app.info[0].value
 
 
@@ -149,9 +149,9 @@ def test_new_copy_and_delete_projects() -> None:
 
     click(app, "⧉ Копия")
     ids = slot_ids(app)
-    assert len(ids) == 6
+    assert len(ids) == 5
     assert app.session_state[state.ACTIVE_PROJECT] == ids[1]
-    assert app.text_input(key=state.PROJECT_NAME).value == "Слайд 3: план (копия)"
+    assert app.text_input(key=state.PROJECT_NAME).value == "Слайд 3: план и факт (копия)"
     assert app.session_state[state.PROJECT_STAGES] == original_stages
     assert state.ESTIMATE not in app.session_state
 
@@ -165,11 +165,11 @@ def test_new_copy_and_delete_projects() -> None:
     click(app, "🗑 Удалить проект")
     assert app.sidebar.warning[0].value == "Удалить проект «Без названия · 3»?"
     click(app, "Отмена")
-    assert len(slot_ids(app)) == 7
+    assert len(slot_ids(app)) == 6
     click(app, "🗑 Удалить проект")
     click(app, "Да, удалить")
-    assert len(slot_ids(app)) == 6
-    assert app.text_input(key=state.PROJECT_NAME).value == "Слайд 3: факт — партнёр тянет проект"
+    assert len(slot_ids(app)) == 5
+    assert app.text_input(key=state.PROJECT_NAME).value == "Регистрация товарного знака"
 
 
 def test_deleting_last_project_leaves_empty_one() -> None:
@@ -195,7 +195,7 @@ def test_export_import_round_trip(downloads: dict[str, bytes]) -> None:
 
     fresh = run_page("Home.py")
     upload(fresh, data)
-    summary = "В файле (профиль Rentab): фирма «Демо-фирма «Слайд 3»», сотрудников: 3, проектов: 5."
+    summary = "В файле (профиль Rentab): фирма «Демо-фирма «Слайд 3»», сотрудников: 3, проектов: 4."
     assert summary in [caption.value for caption in fresh.caption]
     click(fresh, "📂 Загрузить данные из файла")
     assert fresh.success[0].value.startswith("Загружены данные из файла")
@@ -253,7 +253,7 @@ def test_import_asks_before_replacing_and_rounds_margin() -> None:
     assert app.session_state[state.TEAM] == []
     assert app.session_state[state.TARGET_MARGIN_PCT] == 33
     assert (
-        "Проект «Слайд 3: план»: целевая маржа 32,5% округлена до 33% — в интерфейсе "
+        "Проект «Слайд 3: план и факт»: целевая маржа 32,5% округлена до 33% — в интерфейсе "
         "целые проценты." in app.expander[0].markdown[0].value
     )
 

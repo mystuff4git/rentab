@@ -49,7 +49,7 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     app.switch_page("pages/02_Проект.py").run()
     ids = slot_ids(app)
     click(app, "💰 Рассчитать смету")
-    switch(app, ids[2])
+    switch(app, ids[1])
     click(app, "💰 Рассчитать смету")
     click(app, "⧉ Копия")
     click(app, "➕ Новый")
@@ -58,7 +58,7 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
 
     # Дашборд собирает смету XLSX для кнопки «Скачать».
     app.switch_page("pages/03_Дашборд.py").run()
-    switch(app, ids[2])
+    switch(app, ids[1])
     assert app.get("download_button")
 
     app.switch_page("Home.py").run()

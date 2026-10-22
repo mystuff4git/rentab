@@ -8,10 +8,12 @@
 
 Проекты:
 
-- «Слайд 3: план» и «Слайд 3: факт» — golden-сценарий (раздел 12): NNE
-  225 500 и −2 200 ₽, к оплате 315 000 ₽;
+- «Слайд 3: план и факт» — golden-сценарий (раздел 12) одним проектом: план
+  5 / 15 / 20 ч, факт 62 / 15 / 10 ч; NNE 225 500 → −2 200 ₽, к оплате
+  315 000 ₽ (раздел 18.5);
 - «Регистрация товарного знака» — пример 1 (раздел 10), почасовая модель;
-  пошлины Роспатента за три класса МКТУ — из каталога;
+  пошлины Роспатента за три класса МКТУ — из каталога; факт с работой
+  партнёра вне плана (раздел 18.6);
 - «Патентование изобретения» — фикс «издержки + маржа» 30%;
 - «Ответ на уведомление экспертизы» — почасовая модель с потолком.
 """
@@ -23,6 +25,7 @@ from decimal import Decimal
 from rentab_core.duties import Quantity
 from rentab_core.io.schema import DutySelection, ProjectRecord, Workspace
 from rentab_core.models import (
+    ActualHours,
     Assignment,
     CappedPricing,
     Country,
@@ -39,6 +42,7 @@ from rentab_core.models import (
     Period,
     PricingModel,
     Project,
+    ProjectActuals,
     Role,
     Stage,
     UsnProfile,
@@ -104,14 +108,34 @@ def _stage(name: str, *assignments: tuple[str, int]) -> Stage:
     )
 
 
-def _slide3(name: str, description: str, partner: int, lawyer: int, intern: int) -> Project:
-    """Проект слайда 3: цена 300 000 ₽ без НДС согласована, один этап."""
+def _actuals(*rows: tuple[str, str, int]) -> ProjectActuals:
+    return ProjectActuals(
+        hours=tuple(
+            ActualHours(stage=stage, employee=who, hours=Decimal(hours))
+            for stage, who, hours in rows
+        )
+    )
+
+
+SLIDE3_STAGE = "Проект"
+TM_ANALYSIS = "Анализ охраноспособности"
+TM_FILING = "Подготовка и подача заявки"
+
+
+def _slide3() -> Project:
+    """Проект слайда 3: цена 300 000 ₽ без НДС согласована, один этап; план и факт."""
     return Project(
-        name=name,
+        name="Слайд 3: план и факт",
         client="Клиент слайда 3",
-        description=description,
+        description=(
+            "Golden-сценарий защиты ВКР: план по часам и факт — партнёр сделал работу "
+            "юриста и стажёра."
+        ),
         pricing=FixedPricing(price=Decimal(300_000)),
-        stages=(_stage("Проект", (PARTNER, partner), (LAWYER, lawyer), (INTERN, intern)),),
+        stages=(_stage(SLIDE3_STAGE, (PARTNER, 5), (LAWYER, 15), (INTERN, 20)),),
+        actuals=_actuals(
+            (SLIDE3_STAGE, PARTNER, 62), (SLIDE3_STAGE, LAWYER, 15), (SLIDE3_STAGE, INTERN, 10)
+        ),
     )
 
 
@@ -122,6 +146,7 @@ def _project(
     pricing: PricingModel,
     *stages: Stage,
     disbursements: tuple[Disbursement, ...] = (),
+    actuals: ProjectActuals | None = None,
 ) -> Project:
     return Project(
         name=name,
@@ -130,25 +155,34 @@ def _project(
         pricing=pricing,
         stages=stages,
         disbursements=disbursements,
+        actuals=actuals,
     )
 
 
 def demo_projects() -> tuple[ProjectRecord, ...]:
-    """Пять проектов демо-фирмы."""
+    """Четыре проекта демо-фирмы."""
     trademark = _project(
         "Регистрация товарного знака",
         "ООО «Ромашка»",
         "Пример 1 из методологии: классы МКТУ 05, 29, 30.",
         HourlyPricing(),
-        _stage("Анализ охраноспособности", (PARTNER, 2), (LAWYER, 8)),
-        _stage("Подготовка и подача заявки", (LAWYER, 4), (INTERN, 10)),
+        _stage(TM_ANALYSIS, (PARTNER, 2), (LAWYER, 8)),
+        _stage(TM_FILING, (LAWYER, 4), (INTERN, 10)),
         disbursements=(
             Disbursement(
                 name="Нотариальный перевод доверенности",
                 kind=DisbursementKind.OWN,
                 amount=Decimal(1_800),
-                stage="Подготовка и подача заявки",
+                stage=TM_FILING,
             ),
+        ),
+        # Раздел 18.6: на подаче заявки партнёр поработал вне плана.
+        actuals=_actuals(
+            (TM_ANALYSIS, PARTNER, 3),
+            (TM_ANALYSIS, LAWYER, 10),
+            (TM_FILING, LAWYER, 4),
+            (TM_FILING, INTERN, 12),
+            (TM_FILING, PARTNER, 1),
         ),
     )
     invention = _project(
@@ -168,20 +202,7 @@ def demo_projects() -> tuple[ProjectRecord, ...]:
         _stage("Анализ уведомления и ответ", (PARTNER, 2), (LAWYER, 10)),
     )
     return (
-        ProjectRecord(
-            project=_slide3(
-                "Слайд 3: план", "Golden-сценарий защиты ВКР: план по часам.", 5, 15, 20
-            )
-        ),
-        ProjectRecord(
-            project=_slide3(
-                "Слайд 3: факт — партнёр тянет проект",
-                "Тот же проект по факту: партнёр сделал работу юриста и стажёра.",
-                62,
-                15,
-                10,
-            )
-        ),
+        ProjectRecord(project=_slide3()),
         ProjectRecord(
             project=trademark,
             duties={

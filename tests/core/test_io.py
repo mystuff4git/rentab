@@ -342,7 +342,7 @@ def test_random_projects_round_trip(records: list[ProjectRecord]) -> None:
 # ---------------------------------------------------------------------------
 def test_duty_amounts_are_written_for_reference() -> None:
     raw = raw_file()
-    trademark = raw["projects"][2]
+    trademark = raw["projects"][1]
     assert trademark["duties"]["RF"] == {
         "actions": [TM_APPLICATION, TM_EXAMINATION],
         "quantities": {"classes": 3},
@@ -357,7 +357,7 @@ def test_duty_amounts_are_written_for_reference() -> None:
 
 def test_duties_are_recalculated_by_current_catalog() -> None:
     raw = raw_file()
-    raw["projects"][2]["duties"]["RF"]["amounts_at_export"][TM_APPLICATION] = "5000"
+    raw["projects"][1]["duties"]["RF"]["amounts_at_export"][TM_APPLICATION] = "5000"
     result = loads(encode(raw))
     (note,) = result.notes
     assert note.level == NoteLevel.WARNING
@@ -365,7 +365,7 @@ def test_duties_are_recalculated_by_current_catalog() -> None:
         f"Проект «Регистрация товарного знака»: пошлина «{TM_APPLICATION}» при выгрузке была "
         "5 000 ₽, по текущему каталогу — 6 000 ₽. В смете будет новая сумма."
     )
-    record = result.workspace.projects[2]
+    record = result.workspace.projects[1]
     assert record.duties[Country.RF].amounts_at_export == {}
     duties = record.to_project().disbursements[:2]
     assert [item.amount for item in duties] == [d(6_000), d(18_000)]
@@ -375,11 +375,11 @@ def test_unknown_duty_is_skipped_and_old_name_is_renamed() -> None:
     catalog = load_catalog(Country.RF)
     (aliased,) = [duty for duty in catalog.duties if duty.aliases][:1]
     raw = raw_file()
-    raw["projects"][4]["duties"] = {
+    raw["projects"][3]["duties"] = {
         "RF": {"actions": ["Несуществующая пошлина", aliased.aliases[0], aliased.action]}
     }
     result = loads(encode(raw))
-    assert result.workspace.projects[4].duties[Country.RF].actions == (aliased.action,)
+    assert result.workspace.projects[3].duties[Country.RF].actions == (aliased.action,)
     (note,) = result.notes
     assert note.message == (
         "Проект «Ответ на уведомление экспертизы»: пошлины «Несуществующая пошлина» нет в "
@@ -414,7 +414,7 @@ def test_unknown_employee_in_assignment_is_reported() -> None:
     raw["projects"][0]["project"]["stages"][0]["assignments"][0]["employee"] = "Уволенный"
     (note,) = loads(encode(raw)).notes
     assert note.message == (
-        "Проект «Слайд 3: план», этап «Проект»: исполнителя «Уволенный» нет в команде — "
+        "Проект «Слайд 3: план и факт», этап «Проект»: исполнителя «Уволенный» нет в команде — "
         "назначение не войдёт в расчёт."
     )
 

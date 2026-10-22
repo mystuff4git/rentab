@@ -24,6 +24,8 @@ from typing import Any, TypeVar, cast
 
 import streamlit as st
 
+from rentab_core.analysis.plan_fact import actuals_from_plan, plan_pairs
+from rentab_core.analysis.sensitivity import DEFAULT_TORNADO_DEVIATION, WhatIf
 from rentab_core.duties import (
     DEFAULT_QUANTITY,
     QUANTITY_DEFAULTS,
@@ -36,6 +38,7 @@ from rentab_core.models import (
     DEFAULT_KZ_TAX_PROFILE,
     DEFAULT_RF_TAX_PROFILE,
     DEFAULT_TARGET_MARGIN,
+    ActualHours,
     CappedPricing,
     Country,
     Disbursement,
@@ -54,6 +57,7 @@ from rentab_core.models import (
     Overhead,
     PricingModel,
     Project,
+    ProjectActuals,
     Scenario,
     Stage,
     UsnProfile,
@@ -112,6 +116,29 @@ OVERHEADS_EDITOR_BASE = "overheads_editor_base"
 DUTY_QUANTITY_PREFIX = "duty_qty_"
 DUTY_CATEGORY_PREFIX = "duty_category_"
 DUTY_MULTISELECT_PREFIX = "duties_multiselect_"
+# План–факт: факт проекта (None — не введён) и сумма, выставленная вручную.
+ACTUAL_HOURS = "actual_hours"
+ACTUAL_BILLED_MANUAL = "actual_billed_manual"
+ACTUAL_BILLED = "actual_billed"
+# Редактор факта: неизменяемая база и номер ключа виджета (L-21). Номер растёт при
+# загрузке проекта и при сбросе факта: новый виджет не получает правки другого
+# проекта, которые браузер хранит у прежнего.
+ACTUALS_EDITOR_BASE = "actuals_editor_base"
+ACTUALS_EDITOR_NONCE = "actuals_editor_nonce"
+ACTUALS_TABLE_PREFIX = "actuals_table_"
+# «Что если» и торнадо, проценты: у каждого проекта свои, в файл не попадают.
+WHATIF_PREFIX = "whatif_"
+WHATIF_HOURS = "whatif_hours"
+WHATIF_BILLING_RATES = "whatif_billing_rates"
+WHATIF_UTILIZATION = "whatif_utilization"
+WHATIF_OVERHEADS = "whatif_overheads"
+WHATIF_PRICE = "whatif_price"
+WHATIF_FX_PREFIX = "whatif_fx_"
+TORNADO_PCT = "tornado_pct"
+# Сравнение: потолок для сравнения — у проекта; показатель и «все варианты» — общие.
+COMPARE_CAP = "compare_cap"
+COMPARE_METRIC = "compare_metric"
+COMPARE_ALL_VARIANTS = "compare_all_variants"
 # Проекты сессии: слоты, активный проект, счётчик номеров, переключатель.
 PROJECTS = "projects"
 ACTIVE_PROJECT = "active_project"
@@ -138,6 +165,8 @@ TARGET_MARGIN_INPUT_MAX_PCT = 99
 TARGET_MARGIN_SLIDER_MIN_PCT = 0
 TARGET_MARGIN_SLIDER_MAX_PCT = 80
 COPY_SUFFIX = " (копия)"
+# Отклонение для торнадо по умолчанию, % (rentab_core.analysis.sensitivity).
+DEFAULT_TORNADO_PCT = int(DEFAULT_TORNADO_DEVIATION * PERCENT)
 
 # Значения проекта: снимок этих ключей — состояние проекта в его слоте.
 # При загрузке проекта каждый ключ задаётся явно: браузер хранит значение
@@ -156,11 +185,17 @@ PROJECT_KEYS: tuple[str, ...] = (
     PROJECT_STAGES,
     SELECTED_DUTIES,
     CUSTOM_EXPENSES,
+    ACTUAL_HOURS,
+    ACTUAL_BILLED_MANUAL,
+    ACTUAL_BILLED,
+    TORNADO_PCT,
+    COMPARE_CAP,
 )
 PROJECT_PREFIXES: tuple[str, ...] = (
     DUTY_QUANTITY_PREFIX,
     DUTY_CATEGORY_PREFIX,
     DUTY_MULTISELECT_PREFIX,
+    WHATIF_PREFIX,
 )
 # Значения фирмы: заменяются при загрузке демо-фирмы и импорте.
 FIRM_KEYS: tuple[str, ...] = (
@@ -225,9 +260,19 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
     FACT_HEADCOUNT,
     FACT_AGENCY,
     FX_DATE,
+    ACTUAL_BILLED_MANUAL,
+    ACTUAL_BILLED,
+    TORNADO_PCT,
+    COMPARE_CAP,
+    COMPARE_METRIC,
+    COMPARE_ALL_VARIANTS,
 )
-# Префиксы ключей виджетов, которые создаются по стране и единице.
-PERSISTENT_WIDGET_PREFIXES: tuple[str, ...] = (DUTY_QUANTITY_PREFIX, DUTY_CATEGORY_PREFIX)
+# Префиксы ключей виджетов, которые создаются по стране, единице или фактору.
+PERSISTENT_WIDGET_PREFIXES: tuple[str, ...] = (
+    DUTY_QUANTITY_PREFIX,
+    DUTY_CATEGORY_PREFIX,
+    WHATIF_PREFIX,
+)
 
 
 @dataclass
@@ -539,6 +584,19 @@ def vat_mode(values: Values | None = None) -> VatMode:
     return VatMode(_values(values).get(VAT_MODE, VatMode.ON_TOP.value))
 
 
+def project_actuals(values: Values, stage_names: set[str]) -> ProjectActuals | None:
+    """Факт проекта из значений; строки удалённых этапов не сохраняются."""
+    rows = cast(list[ActualHours] | None, values.get(ACTUAL_HOURS))
+    if rows is None:
+        return None
+    billed = number(ACTUAL_BILLED, 0.0, values)
+    manual = bool(values.get(ACTUAL_BILLED_MANUAL)) and billed > 0
+    return ProjectActuals(
+        hours=tuple(row for row in rows if row.stage in stage_names),
+        billed=billed if manual else None,
+    )
+
+
 def project_record(values: Values | None = None, *, strict: bool = True) -> ProjectRecord:
     """Проект и выбранные пошлины из значений проекта.
 
@@ -553,6 +611,7 @@ def project_record(values: Values | None = None, *, strict: bool = True) -> Proj
     """
     values = _values(values)
     calc_country = values.get(CALC_COUNTRY)
+    stages_ = tuple(values.get(PROJECT_STAGES, ()))
     project = Project(
         name=text(PROJECT_NAME, values),
         client=text(PROJECT_CLIENT, values),
@@ -560,9 +619,10 @@ def project_record(values: Values | None = None, *, strict: bool = True) -> Proj
         pricing=pricing(values) if strict or pricing_complete(values) else HourlyPricing(),
         target_margin=target_margin(values),
         vat_mode=vat_mode(values),
-        stages=tuple(values.get(PROJECT_STAGES, ())),
+        stages=stages_,
         disbursements=tuple(values.get(CUSTOM_EXPENSES, ())),
         calc_country=None if calc_country is None else Country(calc_country),
+        actuals=project_actuals(values, {stage.name for stage in stages_}),
     )
     duties: dict[Country, DutySelection] = {}
     for country in Country:
@@ -611,6 +671,14 @@ def project_values(record: ProjectRecord) -> dict[str, Any]:
             country.value: list(record.duties[country].actions) if country in record.duties else []
             for country in Country
         },
+        ACTUAL_HOURS: None if project.actuals is None else list(project.actuals.hours),
+        ACTUAL_BILLED_MANUAL: project.actuals is not None and project.actuals.billed is not None,
+        ACTUAL_BILLED: 0.0
+        if project.actuals is None or project.actuals.billed is None
+        else float(project.actuals.billed),
+        TORNADO_PCT: DEFAULT_TORNADO_PCT,
+        COMPARE_CAP: 0.0,
+        **dict.fromkeys(WHATIF_KEYS, 0),
     }
     if isinstance(project.pricing, CappedPricing):
         result |= {PRICING_MODEL: PRICING_CAPPED, CAP_AMOUNT: float(project.pricing.cap)}
@@ -627,6 +695,162 @@ def project_values(record: ProjectRecord) -> dict[str, Any]:
             )
         result[duty_category_key(country)] = selection.category
     return result
+
+
+def whatif_fx_key(currency: Currency) -> str:
+    """Ключ ползунка «что если» для курса валюты."""
+    return f"{WHATIF_FX_PREFIX}{currency.value}"
+
+
+# Ползунки «что если»: по ключу — отклонение в процентах.
+WHATIF_KEYS: tuple[str, ...] = (
+    WHATIF_HOURS,
+    WHATIF_BILLING_RATES,
+    WHATIF_UTILIZATION,
+    WHATIF_OVERHEADS,
+    WHATIF_PRICE,
+    *(whatif_fx_key(currency) for currency in Currency),
+)
+
+
+def _share(key: str, values: Values) -> Decimal:
+    return Decimal(int(values.get(key, 0))) / PERCENT
+
+
+def what_if(values: Values | None = None) -> WhatIf:
+    """Отклонения «что если» активного проекта (проценты ползунков → доли)."""
+    values = _values(values)
+    return WhatIf(
+        hours=_share(WHATIF_HOURS, values),
+        billing_rates=_share(WHATIF_BILLING_RATES, values),
+        utilization=_share(WHATIF_UTILIZATION, values),
+        overheads=_share(WHATIF_OVERHEADS, values),
+        price=_share(WHATIF_PRICE, values),
+        fx={
+            currency: _share(whatif_fx_key(currency), values)
+            for currency in Currency
+            if int(values.get(whatif_fx_key(currency), 0)) != 0
+        },
+    )
+
+
+def reset_what_if() -> None:
+    """Колбэк: все ползунки «что если» — в ноль."""
+    for key in WHATIF_KEYS:
+        st.session_state[key] = 0
+
+
+def tornado_deviation(values: Values | None = None) -> Decimal:
+    """Отклонение для торнадо, доля."""
+    return Decimal(int(_values(values).get(TORNADO_PCT, DEFAULT_TORNADO_PCT))) / PERCENT
+
+
+def compare_cap(values: Values | None = None) -> Decimal | None:
+    """Потолок для сравнения; None — не задан."""
+    value = number(COMPARE_CAP, 0.0, values)
+    return value if value > 0 else None
+
+
+# ---------------------------------------------------------------------------
+# План–факт
+# ---------------------------------------------------------------------------
+# Столбцы редактора факта.
+ACTUALS_STAGE = "Этап"
+ACTUALS_EMPLOYEE = "Исполнитель"
+ACTUALS_PLAN = "План, ч"
+ACTUALS_FACT = "Факт, ч"
+ACTUALS_NOTE = "Отметка"
+UNPLANNED_NOTE = "вне плана"
+
+
+def actuals() -> list[ActualHours] | None:
+    """Факт активного проекта; None — не введён."""
+    return cast(list[ActualHours] | None, st.session_state.get(ACTUAL_HOURS))
+
+
+def actuals_table_key() -> str:
+    """Ключ редактора факта активного проекта."""
+    return f"{ACTUALS_TABLE_PREFIX}{int(st.session_state.get(ACTUALS_EDITOR_NONCE, 0))}"
+
+
+def _renew_actuals_editor() -> None:
+    """Новый редактор факта: база пересоберётся из факта проекта."""
+    st.session_state.pop(ACTUALS_EDITOR_BASE, None)
+    st.session_state[ACTUALS_EDITOR_NONCE] = int(st.session_state.get(ACTUALS_EDITOR_NONCE, 0)) + 1
+
+
+def actuals_rows(stages_: list[Stage], rows: list[ActualHours]) -> list[dict[str, Any]]:
+    """Строки редактора факта: пары плана, затем работа вне плана, по этапам.
+
+    Пара плана без строки факта получает пустой факт (считается нулём).
+    """
+    plan = plan_pairs(Project(stages=tuple(stages_)))
+    fact = {(row.stage, row.employee): row.hours for row in rows}
+    result = []
+    for stage in stages_:
+        keys = [key for key in plan if key[0] == stage.name]
+        keys += [key for key in fact if key[0] == stage.name and key not in plan]
+        for key in keys:
+            hours = fact.get(key)
+            result.append(
+                {
+                    ACTUALS_STAGE: key[0],
+                    ACTUALS_EMPLOYEE: key[1],
+                    ACTUALS_PLAN: float(plan.get(key, 0)),
+                    ACTUALS_FACT: None if hours is None else float(hours),
+                    ACTUALS_NOTE: "" if key in plan else UNPLANNED_NOTE,
+                }
+            )
+    return result
+
+
+def parse_actuals_rows(rows: list[dict[str, Any]]) -> list[ActualHours]:
+    """Факт из строк редактора: пустой факт — нет строки; работа вне плана с нулём — убрана."""
+    result = []
+    for row in rows:
+        value = row[ACTUALS_FACT]
+        if value is None or value != value:  # пусто или NaN
+            continue
+        hours = to_decimal(max(float(value), 0.0))
+        if row[ACTUALS_NOTE] == UNPLANNED_NOTE and hours == 0:
+            continue
+        result.append(
+            ActualHours(
+                stage=str(row[ACTUALS_STAGE]), employee=str(row[ACTUALS_EMPLOYEE]), hours=hours
+            )
+        )
+    return result
+
+
+def start_actuals() -> None:
+    """Колбэк: факт, равный плану, — с него начинается ввод факта."""
+    project = Project(stages=tuple(stages()))
+    st.session_state[ACTUAL_HOURS] = list(actuals_from_plan(project))
+    _renew_actuals_editor()
+
+
+def clear_actuals() -> None:
+    """Колбэк: удалить факт проекта."""
+    st.session_state[ACTUAL_HOURS] = None
+    st.session_state[ACTUAL_BILLED_MANUAL] = False
+    st.session_state[ACTUAL_BILLED] = 0.0
+    _renew_actuals_editor()
+
+
+def add_actual(stage: str, employee: str, hours: Decimal) -> None:
+    """Колбэк-помощник: строка факта (работа вне плана) или новые часы пары."""
+    rows = [row for row in actuals() or [] if (row.stage, row.employee) != (stage, employee)]
+    rows.append(ActualHours(stage=stage, employee=employee, hours=hours))
+    st.session_state[ACTUAL_HOURS] = rows
+    _renew_actuals_editor()
+
+
+def drop_stage_actuals(stage: str) -> None:
+    """Факт удалённого этапа удаляется вместе с ним."""
+    rows = actuals()
+    if rows is not None:
+        st.session_state[ACTUAL_HOURS] = [row for row in rows if row.stage != stage]
+        _renew_actuals_editor()
 
 
 def scenario() -> Scenario:
@@ -730,6 +954,7 @@ def _load(slot: ProjectSlot) -> None:
     _clear(_is_project_key)
     for key, value in full_values(slot.values).items():
         st.session_state[key] = value
+    _renew_actuals_editor()
     if slot.estimate is None:
         st.session_state.pop(ESTIMATE, None)
     else:
