@@ -4,6 +4,7 @@
 `rentab_core.estimate_xlsx`. Все суммы — в валюте проекта: пересчёт валют
 выполняет ядро при расчёте (L-06). Маржа и эффективная ставка налога — от
 выручки без НДС (L-15); светофор этапов — для всех моделей цены (L-04, L-19).
+Показывается смета активного проекта; проект выбирается в боковой панели.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from ui.labels import (
     STAGE_FLAG_BG_COLORS,
     STAGE_FLAG_LABELS,
 )
+from ui.projects import render_project_switcher
 
 # Цвета слоёв структуры цены (как в v0.3).
 COLOR_LABOR = "#3498db"
@@ -37,6 +39,7 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 state.init_defaults()
 state.persist_widgets()
+render_project_switcher()
 
 
 def render_estimate_download(estimate: Estimate) -> None:
@@ -72,7 +75,10 @@ st.title("📊 Дашборд")
 
 result = state.estimate()
 if result is None:
-    st.info("Сначала сформируйте смету на странице «Проект»")
+    st.info(
+        f"Сначала сформируйте смету проекта «{state.slot_title(state.active_id())}» "
+        "на странице «Проект»"
+    )
     st.stop()
 
 sym = CURRENCY_SYMBOLS[result.currency]

@@ -12,8 +12,15 @@ Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl, pyth
 ## Архитектура
 - `src/rentab_core/` — чистое ядро, НЕ импортирует streamlit. Вся математика здесь.
 - `app/` — Streamlit; только вызывает ядро и рисует. Модели ядра собираются из
-  `st.session_state` в `app/ui/state.py`, русские подписи — в `app/ui/labels.py`.
-  Точка входа — `app/Home.py`; страницы импортируют `ui.*` (Streamlit кладёт `app/` в sys.path).
+  `st.session_state` в `app/ui/state.py` (чистые функции «значения ↔ запись»; проекты
+  сессии — слоты, активный — в ключах виджетов), русские подписи — в `app/ui/labels.py`.
+  Точка входа — `app/Home.py` (дисклеймер, демо-фирма, импорт и экспорт JSON); страницы
+  импортируют `ui.*` (Streamlit кладёт `app/` в sys.path).
+- `src/rentab_core/io/` — файл профиля JSON (фирма, курсы, проекты; версия схемы,
+  миграции, импорт `firm_profile.json` v0.3). Формат — `docs/profile_format.md`,
+  JSON Schema `docs/profile.schema.json` генерируется из моделей. Изменили модели ядра —
+  перегенерировать схему; старые файлы не читаются — новая версия и шаг миграции.
+  Демо-фирма — `src/rentab_core/demo.py`.
 - `src/rentab_core/rates/*.yaml` — ЕДИНСТВЕННОЕ место ставок, порогов (в RUB/KZT/МРП/МЗП/МРОТ),
   показателей по годам и шкал; у каждой записи: value, effective_from, source, source_url,
   needs_review, legal_review. `needs_review: false` без источника схема не пропустит.
@@ -38,10 +45,15 @@ NNE = R − C − Tax;  m = NNE / R
 - Деньги — Decimal в ядре, округление только при выводе. Формат: 1 234 567 ₽.
 - Никаких магических чисел: ставки в YAML, пороги и дефолты — именованные константы.
 - НИКАКОЙ записи пользовательских данных на сервер. Только импорт/экспорт файлов пользователем.
+  Это проверяет `tests/app/test_privacy.py` (аудит-хук записи + AST-проверка): новый путь
+  пользователя добавлять в его сценарий.
 - Ставки не выдумывать. Нет первоисточника → needs_review: true и сообщить.
 - Streamlit: `width='stretch'` вместо `use_container_width`. Значения виджетов меняются в
   колбэках (`on_click`), а не после создания виджета; вход `st.data_editor` не
-  пересобирается из его же результата (иначе правки теряются, L-21).
+  пересобирается из его же результата (иначе правки теряются, L-21). Виджет с ключом,
+  который остаётся на экране, не принимает новый `default` (браузер хранит старое
+  значение): менять его значение — только явным присваиванием ключа, не удалением ключа.
+  AppTest этого не ловит — проверять в браузере (`docs/screenshots/phase-4/shots.js`).
 - Перед PR: ruff, mypy, pytest зелёные; для UI — скриншоты через Playwright.
 - Одна фаза = одна ветка = один PR. Фазы описаны в docs/ROADMAP.md.
 
@@ -56,6 +68,7 @@ uv run pytest --no-cov -k slide3 # быстрый прогон части тес
 uv run pytest --update-snapshots # перезаписать снимки и мост «было/стало» — только осознанно
 uv run python -m tests.characterization.bridge  # перегенерировать docs/phase2_before_after.md
 uv run python -m rentab_core.rates.verification docs/rates_verification.md  # после правки YAML
+uv run python -m rentab_core.io docs/profile.schema.json  # после изменения моделей ядра
 uv run streamlit run app/Home.py # приложение (конфиг — .streamlit/config.toml в корне)
 ```
 
@@ -68,7 +81,8 @@ uv run streamlit run app/Home.py # приложение (конфиг — .strea
 - Ядро против v0.3 (с фазы 2 цифры различаются осознанно):
   - `tests/characterization/core_adapter.py` переводит сценарии v0.3 в модели ядра:
     `FINAL` — правила фазы 2 (cost_rate v0.3 = контрактный час, u = 0,65), `NEUTRAL` —
-    ядро видит те же числа, что v0.3. Ядро о формате v0.3 не знает.
+    ядро видит те же числа, что v0.3. Формат сценариев v0.3 ядро не знает; формат
+    файла профиля v0.3 знает только импортёр `rentab_core/io/v03.py` (те же правила, что `FINAL`).
   - `test_core_snapshots.py` — снимки ядра в `snapshots/core/` (снимки v0.3 не трогать).
   - `bridge.py` раскладывает каждое расхождение с v0.3 по шагам L-NN и генерирует
     `docs/phase2_before_after.md`; `test_phase2_bridge.py` проверяет мост и документ.

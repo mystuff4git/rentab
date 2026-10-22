@@ -8,3 +8,11 @@ base = "light"
 
 [server]
 headless = true
+# Загружаемый файл профиля — десятки килобайт; ядро отклоняет файлы больше
+# 2 МБ (rentab_core.io.MAX_PROFILE_BYTES), Streamlit не принимает больше 2 МБ.
+maxUploadSize = 2
+
+[browser]
+# Приватность (L-10): браузер не отправляет Streamlit анонимную статистику
+# использования приложения.
+gatherUsageStats = false

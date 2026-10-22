@@ -1,0 +1,1078 @@
+{
+  "$defs": {
+    "ApplicantCategory": {
+      "description": "Категория заявителя: от неё зависят цены Казпатента.",
+      "enum": [
+        "legal_entity",
+        "sme",
+        "individual"
+      ],
+      "title": "ApplicantCategory",
+      "type": "string"
+    },
+    "Assignment": {
+      "additionalProperties": false,
+      "description": "Назначение сотрудника на этап с плановыми часами.",
+      "properties": {
+        "employee": {
+          "description": "Имя сотрудника из Firm.team",
+          "title": "Employee",
+          "type": "string"
+        },
+        "hours": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Hours"
+        }
+      },
+      "required": [
+        "employee",
+        "hours"
+      ],
+      "title": "Assignment",
+      "type": "object"
+    },
+    "AusnProfile": {
+      "additionalProperties": false,
+      "description": "РФ, автоматизированная УСН: ставка фиксирована, взносы нулевые.",
+      "properties": {
+        "regime": {
+          "const": "ausn",
+          "default": "ausn",
+          "title": "Regime",
+          "type": "string"
+        }
+      },
+      "title": "AusnProfile",
+      "type": "object"
+    },
+    "CappedPricing": {
+      "additionalProperties": false,
+      "description": "Почасовая модель с потолком (capped fee): R = min(Σ ставка × часы, cap).",
+      "properties": {
+        "kind": {
+          "const": "capped",
+          "default": "capped",
+          "title": "Kind",
+          "type": "string"
+        },
+        "cap": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Cap"
+        }
+      },
+      "required": [
+        "cap"
+      ],
+      "title": "CappedPricing",
+      "type": "object"
+    },
+    "Country": {
+      "description": "Страна расчёта налогов и валюты сметы.",
+      "enum": [
+        "RF",
+        "KZ"
+      ],
+      "title": "Country",
+      "type": "string"
+    },
+    "Currency": {
+      "description": "Валюта суммы (ISO 4217).",
+      "enum": [
+        "RUB",
+        "KZT",
+        "USD"
+      ],
+      "title": "Currency",
+      "type": "string"
+    },
+    "Disbursement": {
+      "additionalProperties": false,
+      "description": "Прямой расход проекта: пошлина, курьер, перевод и т. п.\n\nAttributes:\n    name: Название.\n    kind: Возмещаемый клиентом или собственный.\n    amount: Сумма в валюте `currency`.\n    currency: Валюта расхода.\n    stage: Этап, к которому относится собственный расход; None —\n        расход распределяется по этапам пропорционально теневой стоимости.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/DisbursementKind"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency",
+          "default": "RUB"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "amount"
+      ],
+      "title": "Disbursement",
+      "type": "object"
+    },
+    "DisbursementKind": {
+      "description": "Тип прямого расхода проекта.",
+      "enum": [
+        "billable",
+        "own"
+      ],
+      "title": "DisbursementKind",
+      "type": "string"
+    },
+    "DutySelection": {
+      "additionalProperties": false,
+      "description": "Пошлины страны, выбранные на проекте.\n\nAttributes:\n    actions: Названия действий из каталога в порядке выбора.\n    quantities: Классы МКТУ, пункты формулы и т. п. Не заданное\n        количество — по умолчанию (`duties.QUANTITY_DEFAULTS`).\n    category: Категория заявителя (цены Казпатента).\n    amounts_at_export: Суммы пошлин на дату экспорта — справочно: при\n        загрузке суммы пересчитываются по актуальному каталогу.",
+      "properties": {
+        "actions": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "quantities": {
+          "additionalProperties": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Quantity"
+          },
+          "title": "Quantities",
+          "type": "object"
+        },
+        "category": {
+          "$ref": "#/$defs/ApplicantCategory",
+          "default": "legal_entity"
+        },
+        "amounts_at_export": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "title": "Amounts At Export",
+          "type": "object"
+        }
+      },
+      "title": "DutySelection",
+      "type": "object"
+    },
+    "Employee": {
+      "additionalProperties": false,
+      "description": "Сотрудник, чьи часы продаются клиенту.\n\nСебестоимость часа не вводится, а выводится (`costing.employee_cost`):\nc = W / (H × u), где W — полная стоимость в месяц, H — контрактные часы,\nu — целевая утилизация.\n\nAttributes:\n    name: Имя; по нему этапы проекта ссылаются на исполнителя.\n    role: Роль (для коэффициента рычага).\n    compensation: Полная стоимость в месяц: оклад и взносы или сумма.\n    currency: Валюта оклада и ставки для клиента.\n    billing_rate: Ставка для клиента за час.\n    contract_hours_per_month: Контрактные часы в месяц.\n    target_utilization: Доля контрактных часов, которая продаётся клиентам.\n    paid_from_profit: Вознаграждение выплачивается из прибыли (дивидендами):\n        для налога «доходы − расходы» оно не расход (methodology.md, раздел 5.1).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/Role"
+        },
+        "compensation": {
+          "discriminator": {
+            "mapping": {
+              "monthly": "#/$defs/MonthlyCost",
+              "salary": "#/$defs/Salary"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Salary"
+            },
+            {
+              "$ref": "#/$defs/MonthlyCost"
+            }
+          ],
+          "title": "Compensation"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency",
+          "default": "RUB"
+        },
+        "billing_rate": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "0",
+          "title": "Billing Rate"
+        },
+        "contract_hours_per_month": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "168",
+          "title": "Contract Hours Per Month"
+        },
+        "target_utilization": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "0.65",
+          "title": "Target Utilization"
+        },
+        "paid_from_profit": {
+          "default": false,
+          "title": "Paid From Profit",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "role",
+        "compensation"
+      ],
+      "title": "Employee",
+      "type": "object"
+    },
+    "ExchangeRates": {
+      "additionalProperties": false,
+      "description": "Курсы валют: цена единицы валюты в рублях, как публикует ЦБ РФ.\n\nКурсы вводятся вручную или загружаются с сайта ЦБ РФ / НБРК\n(`fx.fetch_rates`). None — курс не задан: пересчёт через эту валюту\nневозможен.",
+      "properties": {
+        "rub_per_kzt": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rub Per Kzt"
+        },
+        "rub_per_usd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rub Per Usd"
+        }
+      },
+      "title": "ExchangeRates",
+      "type": "object"
+    },
+    "Firm": {
+      "additionalProperties": false,
+      "description": "Фирма: юрисдикция, команда, накладные и курсы валют.\n\nБиллируемая ёмкость фирмы (знаменатель ставки накладных) выводится из\nкоманды: Σ H_i × u_i.\n\nAttributes:\n    name: Название для шапки сметы.\n    jurisdiction: Юрисдикция и налоговые режимы.\n    team: Сотрудники, чьи часы продаются клиентам. Имена не обязаны быть\n        уникальными: как в v0.3, при совпадении исполнителем этапа\n        считается последний сотрудник.\n    overheads: Накладные расходы фирмы.\n    exchange_rates: Курсы для пересчёта сумм в валюту проекта.\n    facts: Данные для проверки применимости налоговых режимов.",
+      "properties": {
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "jurisdiction": {
+          "$ref": "#/$defs/Jurisdiction"
+        },
+        "team": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Employee"
+          },
+          "title": "Team",
+          "type": "array"
+        },
+        "overheads": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Overhead"
+          },
+          "title": "Overheads",
+          "type": "array"
+        },
+        "exchange_rates": {
+          "$ref": "#/$defs/ExchangeRates"
+        },
+        "facts": {
+          "$ref": "#/$defs/FirmFacts"
+        }
+      },
+      "title": "Firm",
+      "type": "object"
+    },
+    "FirmFacts": {
+      "additionalProperties": false,
+      "description": "Данные фирмы для проверки применимости налоговых режимов (раздел 15).\n\nNone — значение не задано: проверки по нему пропускаются.\n\nAttributes:\n    rf_legal_form: Организационно-правовая форма в РФ.\n    annual_income_rf: Ожидаемый доход за год в РФ без НДС, ₽.\n    annual_income_kz: Ожидаемый оборот за год в РК без НДС, ₸.\n    headcount: Средняя численность работников по трудовым договорам;\n        None — по числу сотрудников в команде.\n    agency_contracts: Фирма работает по договорам поручения, комиссии или\n        агентским (например, платит пошлины за клиента как агент).",
+      "properties": {
+        "rf_legal_form": {
+          "$ref": "#/$defs/LegalForm",
+          "default": "organization"
+        },
+        "annual_income_rf": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annual Income Rf"
+        },
+        "annual_income_kz": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Annual Income Kz"
+        },
+        "headcount": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Headcount"
+        },
+        "agency_contracts": {
+          "default": false,
+          "title": "Agency Contracts",
+          "type": "boolean"
+        }
+      },
+      "title": "FirmFacts",
+      "type": "object"
+    },
+    "FixedPricing": {
+      "additionalProperties": false,
+      "description": "Фиксированная цена.\n\nAttributes:\n    price: Согласованная цена (в режиме НДС проекта). None — цена\n        «издержки + маржа» по закрытой формуле от целевой маржи проекта.",
+      "properties": {
+        "kind": {
+          "const": "fixed",
+          "default": "fixed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Price"
+        }
+      },
+      "title": "FixedPricing",
+      "type": "object"
+    },
+    "HourlyPricing": {
+      "additionalProperties": false,
+      "description": "Почасовая модель: R = Σ ставка × часы.",
+      "properties": {
+        "kind": {
+          "const": "hourly",
+          "default": "hourly",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "HourlyPricing",
+      "type": "object"
+    },
+    "Jurisdiction": {
+      "additionalProperties": false,
+      "description": "Юрисдикция фирмы и налоговые режимы по странам.\n\nAttributes:\n    mode: РФ, РК или обе страны.\n    rf: Режим в РФ; None — режим по умолчанию (УСН «Доходы» без НДС).\n    kz: Режим в РК; None — ОУР для ТОО без НДС.",
+      "properties": {
+        "mode": {
+          "$ref": "#/$defs/JurisdictionMode",
+          "default": "RF"
+        },
+        "rf": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "ausn": "#/$defs/AusnProfile",
+                  "npd": "#/$defs/NpdProfile",
+                  "osno": "#/$defs/OsnoProfile",
+                  "usn": "#/$defs/UsnProfile"
+                },
+                "propertyName": "regime"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/UsnProfile"
+                },
+                {
+                  "$ref": "#/$defs/AusnProfile"
+                },
+                {
+                  "$ref": "#/$defs/OsnoProfile"
+                },
+                {
+                  "$ref": "#/$defs/NpdProfile"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rf"
+        },
+        "kz": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KzOurProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Jurisdiction",
+      "type": "object"
+    },
+    "JurisdictionMode": {
+      "description": "Где работает фирма: только РФ, только РК или в обеих странах.",
+      "enum": [
+        "RF",
+        "KZ",
+        "BOTH"
+      ],
+      "title": "JurisdictionMode",
+      "type": "string"
+    },
+    "KzForm": {
+      "description": "Организационная форма в РК.",
+      "enum": [
+        "too",
+        "ip"
+      ],
+      "title": "KzForm",
+      "type": "string"
+    },
+    "KzOurProfile": {
+      "additionalProperties": false,
+      "description": "РК, общеустановленный режим.",
+      "properties": {
+        "regime": {
+          "const": "our",
+          "default": "our",
+          "title": "Regime",
+          "type": "string"
+        },
+        "form": {
+          "$ref": "#/$defs/KzForm",
+          "default": "too"
+        },
+        "vat": {
+          "$ref": "#/$defs/KzVat",
+          "default": "none"
+        }
+      },
+      "title": "KzOurProfile",
+      "type": "object"
+    },
+    "KzVat": {
+      "description": "Ставка НДС в РК.",
+      "enum": [
+        "none",
+        "16%"
+      ],
+      "title": "KzVat",
+      "type": "string"
+    },
+    "LegalForm": {
+      "description": "Организационно-правовая форма фирмы в РФ (для применимости режимов).",
+      "enum": [
+        "organization",
+        "entrepreneur",
+        "individual"
+      ],
+      "title": "LegalForm",
+      "type": "string"
+    },
+    "MonthlyCost": {
+      "additionalProperties": false,
+      "description": "Полная стоимость сотрудника в месяц, введённая напрямую.\n\nТак задаётся нормативное вознаграждение партнёра по Майстеру — рыночная\nцена его труда, отделённая от прибыли фирмы, — и стоимость подрядчика.",
+      "properties": {
+        "kind": {
+          "const": "monthly",
+          "default": "monthly",
+          "title": "Kind",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Amount"
+        }
+      },
+      "required": [
+        "amount"
+      ],
+      "title": "MonthlyCost",
+      "type": "object"
+    },
+    "NpdClientType": {
+      "description": "Тип клиентов самозанятого: от него зависит ставка НПД.",
+      "enum": [
+        "individual",
+        "legal_entity"
+      ],
+      "title": "NpdClientType",
+      "type": "string"
+    },
+    "NpdProfile": {
+      "additionalProperties": false,
+      "description": "РФ, налог на профессиональный доход (самозанятость).",
+      "properties": {
+        "regime": {
+          "const": "npd",
+          "default": "npd",
+          "title": "Regime",
+          "type": "string"
+        },
+        "client_type": {
+          "$ref": "#/$defs/NpdClientType",
+          "default": "legal_entity"
+        }
+      },
+      "title": "NpdProfile",
+      "type": "object"
+    },
+    "OsnoProfile": {
+      "additionalProperties": false,
+      "description": "РФ, общая система налогообложения.",
+      "properties": {
+        "regime": {
+          "const": "osno",
+          "default": "osno",
+          "title": "Regime",
+          "type": "string"
+        },
+        "social_contributions": {
+          "$ref": "#/$defs/SocialContributions",
+          "default": "standard"
+        }
+      },
+      "title": "OsnoProfile",
+      "type": "object"
+    },
+    "Overhead": {
+      "additionalProperties": false,
+      "description": "Накладной расход фирмы (аренда, ПО, бухгалтерия).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Amount"
+        },
+        "currency": {
+          "$ref": "#/$defs/Currency",
+          "default": "RUB"
+        },
+        "period": {
+          "$ref": "#/$defs/Period"
+        }
+      },
+      "required": [
+        "name",
+        "amount",
+        "period"
+      ],
+      "title": "Overhead",
+      "type": "object"
+    },
+    "Period": {
+      "description": "Периодичность накладного расхода.",
+      "enum": [
+        "monthly",
+        "annual",
+        "one_time"
+      ],
+      "title": "Period",
+      "type": "string"
+    },
+    "Project": {
+      "additionalProperties": false,
+      "description": "Проект для сметы.\n\nAttributes:\n    name: Название проекта.\n    client: Клиент.\n    description: Краткое описание.\n    pricing: Модель ценообразования.\n    target_margin: Целевая маржа NNE: определяет цену «издержки + маржа»\n        и служит порогом светофора этапов во всех моделях.\n    vat_mode: Указаны ли цены проекта без НДС или включая НДС.\n    stages: Этапы в порядке выполнения; названия уникальны.\n    disbursements: Прямые расходы: пошлины из каталога, затем\n        произвольные расходы (порядок важен для сметы).\n    calc_country: Страна расчёта налога; учитывается только в режиме «Оба».",
+      "properties": {
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "client": {
+          "default": "",
+          "title": "Client",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
+        },
+        "pricing": {
+          "discriminator": {
+            "mapping": {
+              "capped": "#/$defs/CappedPricing",
+              "fixed": "#/$defs/FixedPricing",
+              "hourly": "#/$defs/HourlyPricing"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/HourlyPricing"
+            },
+            {
+              "$ref": "#/$defs/CappedPricing"
+            },
+            {
+              "$ref": "#/$defs/FixedPricing"
+            }
+          ],
+          "title": "Pricing"
+        },
+        "target_margin": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "0.30",
+          "title": "Target Margin"
+        },
+        "vat_mode": {
+          "$ref": "#/$defs/VatMode",
+          "default": "on_top"
+        },
+        "stages": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Stage"
+          },
+          "title": "Stages",
+          "type": "array"
+        },
+        "disbursements": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Disbursement"
+          },
+          "title": "Disbursements",
+          "type": "array"
+        },
+        "calc_country": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Country"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Project",
+      "type": "object"
+    },
+    "ProjectRecord": {
+      "additionalProperties": false,
+      "description": "Проект в файле и в сессии: проект ядра и выбранные пошлины.\n\nAttributes:\n    project: Проект; `disbursements` — только расходы, введённые\n        вручную. Пошлины из каталога добавляются при расчёте.\n    duties: Выбранные пошлины по странам.",
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/Project"
+        },
+        "duties": {
+          "additionalProperties": {
+            "$ref": "#/$defs/DutySelection"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/Country"
+          },
+          "title": "Duties",
+          "type": "object"
+        }
+      },
+      "title": "ProjectRecord",
+      "type": "object"
+    },
+    "Quantity": {
+      "description": "Единица, от числа которых зависит пошлина.",
+      "enum": [
+        "classes",
+        "items_over_limit",
+        "claims",
+        "independent_claims",
+        "designs"
+      ],
+      "title": "Quantity",
+      "type": "string"
+    },
+    "RateSource": {
+      "description": "Откуда взяты курсы.",
+      "enum": [
+        "cbr",
+        "nbrk",
+        "manual"
+      ],
+      "title": "RateSource",
+      "type": "string"
+    },
+    "RatesQuote": {
+      "additionalProperties": false,
+      "description": "Курсы, загруженные на дату.\n\nAttributes:\n    rates: Курсы ₽ за 1 ₸ и ₽ за 1 $.\n    source: Источник.\n    rate_date: Дата курсов по данным источника (в выходной — последняя\n        рабочая или следующая установленная дата).\n    requested: Дата, на которую запрашивали курсы.",
+      "properties": {
+        "rates": {
+          "$ref": "#/$defs/ExchangeRates"
+        },
+        "source": {
+          "$ref": "#/$defs/RateSource"
+        },
+        "rate_date": {
+          "format": "date",
+          "title": "Rate Date",
+          "type": "string"
+        },
+        "requested": {
+          "format": "date",
+          "title": "Requested",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rates",
+        "source",
+        "rate_date",
+        "requested"
+      ],
+      "title": "RatesQuote",
+      "type": "object"
+    },
+    "Role": {
+      "description": "Роль сотрудника в иерархии фирмы (от старшей к младшей).",
+      "enum": [
+        "partner",
+        "senior",
+        "associate",
+        "intern"
+      ],
+      "title": "Role",
+      "type": "string"
+    },
+    "Salary": {
+      "additionalProperties": false,
+      "description": "Полная стоимость сотрудника из оклада и взносов работодателя.\n\nВзносы — доля оклада. По умолчанию интерфейс подставляет эффективную\nставку за год с учётом предельной базы и тарифа\n(`tax.payroll.employer_contribution_rate`, L-08).",
+      "properties": {
+        "kind": {
+          "const": "salary",
+          "default": "salary",
+          "title": "Kind",
+          "type": "string"
+        },
+        "gross_salary": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Gross Salary"
+        },
+        "employer_contribution_rate": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Employer Contribution Rate"
+        }
+      },
+      "required": [
+        "gross_salary",
+        "employer_contribution_rate"
+      ],
+      "title": "Salary",
+      "type": "object"
+    },
+    "SocialContributions": {
+      "description": "Тариф страховых взносов работодателя в РФ (docs/methodology.md, раздел 3.1.1).",
+      "enum": [
+        "standard",
+        "sme",
+        "zero"
+      ],
+      "title": "SocialContributions",
+      "type": "string"
+    },
+    "Stage": {
+      "additionalProperties": false,
+      "description": "Этап проекта: набор назначений «сотрудник × часы».\n\nПирамида «партнёр проверяет 2 ч, юрист делает 8 ч» — один этап с двумя\nназначениями (L-05).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "assignments": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          },
+          "title": "Assignments",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Stage",
+      "type": "object"
+    },
+    "UsnObject": {
+      "description": "Объект налогообложения УСН.",
+      "enum": [
+        "income",
+        "income_minus_expenses"
+      ],
+      "title": "UsnObject",
+      "type": "string"
+    },
+    "UsnProfile": {
+      "additionalProperties": false,
+      "description": "РФ, упрощённая система налогообложения.",
+      "properties": {
+        "regime": {
+          "const": "usn",
+          "default": "usn",
+          "title": "Regime",
+          "type": "string"
+        },
+        "tax_object": {
+          "$ref": "#/$defs/UsnObject",
+          "default": "income"
+        },
+        "vat": {
+          "$ref": "#/$defs/UsnVat",
+          "default": "none"
+        },
+        "social_contributions": {
+          "$ref": "#/$defs/SocialContributions",
+          "default": "standard"
+        }
+      },
+      "title": "UsnProfile",
+      "type": "object"
+    },
+    "UsnVat": {
+      "description": "Ставка НДС на УСН.",
+      "enum": [
+        "none",
+        "5%",
+        "7%"
+      ],
+      "title": "UsnVat",
+      "type": "string"
+    },
+    "VatMode": {
+      "description": "Как указаны цены проекта (ставки, потолок, согласованная цена).",
+      "enum": [
+        "on_top",
+        "included"
+      ],
+      "title": "VatMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Файл профиля: конверт с форматом и версией вокруг `Workspace`.\n\nAttributes:\n    format: Всегда \"rentab\".\n    schema_version: Версия схемы.\n    exported_at: Когда файл выгружен (справочно).\n    app_version: Версия Rentab, которая его выгрузила (справочно).",
+  "properties": {
+    "format": {
+      "const": "rentab",
+      "default": "rentab",
+      "title": "Format",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "exported_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exported At"
+    },
+    "app_version": {
+      "default": "",
+      "title": "App Version",
+      "type": "string"
+    },
+    "firm": {
+      "$ref": "#/$defs/Firm"
+    },
+    "rates_quote": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RatesQuote"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "projects": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProjectRecord"
+      },
+      "title": "Projects",
+      "type": "array"
+    }
+  },
+  "title": "Rentab profile, schema version 1",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -5,7 +5,7 @@
 часа не вводится, а считается ядром: c = W / (H × u) (docs/methodology.md,
 раздел 3); ставка взносов подставляется по окладу и тарифу (раздел 3.1.1).
 Сохранения профиля на диск, как в v0.3, нет: данные живут только в сессии
-(L-10).
+(L-10); в файл JSON их выгружает и загружает сам пользователь на главной.
 """
 
 from __future__ import annotations
@@ -93,9 +93,9 @@ OVERHEAD_TEMPLATE: tuple[str, ...] = (
     "Прочие накладные",
 )
 
-# Редактор накладных: ключ виджета и его неизменяемая база (см. вкладку 3).
-OVERHEADS_EDITOR = "overheads_editor"
-OVERHEADS_EDITOR_BASE = "overheads_editor_base"
+# Редактор накладных: ключ виджета и его неизменяемая база — state.OVERHEADS_EDITOR*.
+OVERHEADS_EDITOR = state.OVERHEADS_EDITOR
+OVERHEADS_EDITOR_BASE = state.OVERHEADS_EDITOR_BASE
 OVERHEAD_COLUMNS = ["Название", "Сумма", "Период", "Валюта"]
 
 state.init_defaults()
@@ -105,7 +105,8 @@ st.title("⚙️ Настройка среды")
 st.caption("Заполните три вкладки: юрисдикция, команда, накладные фирмы.")
 st.info(
     "Данные фирмы хранятся только в этой сессии и не сохраняются на сервере. "
-    "Экспорт и импорт профиля в файл появятся в следующих версиях.",
+    "Сохранить их в файл JSON и загрузить обратно (или открыть демо-фирму) можно "
+    "на главной странице.",
     icon="🔒",
 )
 
@@ -124,7 +125,7 @@ with tab_jur:
             options=list(JurisdictionMode),
             format_func=lambda m: JURISDICTION_LABELS[m],
             horizontal=True,
-            key="jurisdiction_choice",
+            key=state.JURISDICTION_CHOICE,
         )
         or JurisdictionMode.RF
     )
@@ -138,7 +139,7 @@ with tab_jur:
                 options=list(RF_REGIME_LABELS),
                 format_func=lambda k: RF_REGIME_LABELS[k],
                 horizontal=True,
-                key="rf_regime_choice",
+                key=state.RF_REGIME,
             )
             or "usn"
         )
@@ -150,7 +151,7 @@ with tab_jur:
                         "Объект налогообложения",
                         options=list(UsnObject),
                         format_func=usn_object_label,
-                        key="rf_usn_object",
+                        key=state.RF_USN_OBJECT,
                     )
                     or UsnObject.INCOME
                 )
@@ -160,7 +161,7 @@ with tab_jur:
                         "НДС (с 2026 г.)",
                         options=list(UsnVat),
                         format_func=vat_label,
-                        key="rf_usn_vat",
+                        key=state.RF_USN_VAT,
                     )
                     or UsnVat.NONE
                 )
@@ -170,7 +171,7 @@ with tab_jur:
                         "Страховые взносы",
                         options=list(SocialContributions),
                         format_func=social_contributions_label,
-                        key="rf_usn_sc",
+                        key=state.RF_USN_SC,
                     )
                     or SocialContributions.STANDARD
                 )
@@ -194,7 +195,7 @@ with tab_jur:
                         "Страховые взносы",
                         options=list(SocialContributions),
                         format_func=social_contributions_label,
-                        key="rf_osno_sc",
+                        key=state.RF_OSNO_SC,
                     )
                     or SocialContributions.STANDARD
                 )
@@ -206,7 +207,7 @@ with tab_jur:
                     options=list(NpdClientType),
                     format_func=npd_client_label,
                     horizontal=True,
-                    key="rf_npd_client",
+                    key=state.RF_NPD_CLIENT,
                 )
                 or NpdClientType.LEGAL_ENTITY
             )
@@ -223,7 +224,7 @@ with tab_jur:
                     options=list(KzForm),
                     format_func=kz_form_label,
                     horizontal=True,
-                    key="kz_form_choice",
+                    key=state.KZ_FORM,
                 )
                 or KzForm.TOO
             )
@@ -234,7 +235,7 @@ with tab_jur:
                     options=list(KzVat),
                     format_func=vat_label,
                     horizontal=True,
-                    key="kz_vat_choice",
+                    key=state.KZ_VAT,
                 )
                 or KzVat.NONE
             )
