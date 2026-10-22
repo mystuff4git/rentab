@@ -28,6 +28,10 @@ class CurrencyConversionError(RentabError, ValueError):
     """Сумму нельзя пересчитать в валюту проекта: не задан нужный курс."""
 
 
+class PlanFactError(RentabError, ValueError):
+    """План–факт нельзя рассчитать: факт проекта не введён."""
+
+
 class ExchangeRateFetchError(RentabError):
     """Курсы не удалось загрузить или разобрать: нужен ручной ввод."""
 
