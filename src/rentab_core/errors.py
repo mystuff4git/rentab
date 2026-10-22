@@ -30,3 +30,10 @@ class CurrencyConversionError(RentabError, ValueError):
 
 class ExchangeRateFetchError(RentabError):
     """Курсы не удалось загрузить или разобрать: нужен ручной ввод."""
+
+
+class ProfileImportError(RentabError, ValueError):
+    """Файл профиля нельзя загрузить: не JSON, чужой формат или неверные значения.
+
+    Текст ошибки показывается пользователю как есть.
+    """
