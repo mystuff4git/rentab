@@ -1,4 +1,4 @@
-"""Мост «было/стало»: как цифры v0.3 превращаются в цифры фазы 2.
+"""Мост «было/стало»: как цифры v0.3 превращаются в цифры фаз 2–3.
 
 Для каждого characterization-сценария (6 именованных и 26 ячеек матрицы)
 ядро считается несколько раз с разными правилами перевода входов v0.3
@@ -6,13 +6,15 @@
 свою долю расхождения:
 
     v0.3 → L-02 (НДС сверху) → L-12 («Прочее») → L-06 (курсы)
-         → L-05 (слияние этапов) → L-01 (утилизация) → L-03 (мин. налог) = стало
+         → L-05 (слияние этапов) → L-01 (утилизация) → L-03 (мин. налог)
+         → L-09 (пошлины из каталога, фаза 3) = стало
 
 Минимальный налог — последний шаг: все предыдущие считаются без него (для
 фикс-цены — `price_without_min_tax`, для почасовой модели — налог с прибыли
 без минимального), поэтому столбец L-03 показывает его действие на итоговых
-издержках. L-04, L-05, L-15 и L-19 меняют только этапы и показатели
-дашборда, итоги проекта от них не зависят.
+издержках. L-09 меняет только возмещаемые расходы и «к оплате». L-04, L-05,
+L-15 и L-19 меняют только этапы и показатели дашборда, итоги проекта от них
+не зависят.
 
 Документ `docs/phase2_before_after.md` генерируется этим модулем:
 
@@ -46,10 +48,12 @@ from tests.characterization.test_legacy_tax_matrix import PRICING, TAX_CONFIGS, 
 
 DOC_PATH = Path(__file__).parents[2] / "docs" / "phase2_before_after.md"
 
-NEUTRAL_STEP, EXTRA_STEP, FX_STEP, MERGE_STEP, FINAL_STEP = (label for label, _ in BRIDGE_STEPS)
+NEUTRAL_STEP, EXTRA_STEP, FX_STEP, MERGE_STEP, PHASE2_STEP, FINAL_STEP = (
+    label for label, _ in BRIDGE_STEPS
+)
 # Столбцы моста в документе по порядку шагов; L-05 итогов не меняет.
-DELTA_COLUMNS = ("L-02", "L-12", "L-06", "L-01", "L-03")
-# Последний шаг моста — смета фазы 2.
+DELTA_COLUMNS = ("L-02", "L-12", "L-06", "L-01", "L-03", "L-09")
+# Последний шаг моста — смета фаз 2–3.
 RESULT_KEY = DELTA_COLUMNS[-1]
 
 MINUS = "−"
@@ -82,8 +86,13 @@ class ScenarioBridge:
         return self.steps[NEUTRAL_STEP]
 
     @property
+    def phase2(self) -> Estimate:
+        """Смета фазы 2: без сумм пошлин из каталога."""
+        return self.steps[PHASE2_STEP]
+
+    @property
     def final(self) -> Estimate:
-        """Смета фазы 2."""
+        """Смета фаз 2–3."""
         return self.steps[FINAL_STEP]
 
     @property
@@ -163,7 +172,13 @@ def _is_fixed(estimate: Estimate) -> bool:
 
 def price_without_min(estimate: Estimate) -> Decimal:
     """Фикс-цена «издержки + маржа» без минимального налога."""
-    return price_without_min_tax(estimate.tax.terms, estimate.total_costs, estimate.target_margin)
+    return price_without_min_tax(
+        estimate.tax.terms,
+        estimate.total_costs,
+        estimate.target_margin,
+        contributions=estimate.tax.contributions,
+        nondeductible=estimate.tax.nondeductible,
+    )
 
 
 def _revenue_without_min(e: Estimate) -> Decimal:
@@ -194,9 +209,10 @@ METRICS: tuple[Metric, ...] = (
 
 
 def chain(b: ScenarioBridge, metric: Metric) -> dict[str, Decimal]:
-    """Значения показателя по порядку шагов: v0.3, L-02, L-12, L-06, L-05, L-01, L-03.
+    """Значения показателя по порядку шагов: v0.3, L-02, L-12, L-06, L-05, L-01, L-03, L-09.
 
-    Все шаги до L-03 — без минимального налога; L-03 — смета фазы 2.
+    Все шаги до L-03 — без минимального налога; L-03 — смета фазы 2, L-09 —
+    она же с суммами пошлин из каталога (фаза 3).
     """
     return {
         "v0.3": metric.v03(b),
@@ -204,8 +220,9 @@ def chain(b: ScenarioBridge, metric: Metric) -> dict[str, Decimal]:
         "L-12": metric.without_min_tax(b.steps[EXTRA_STEP]),
         "L-06": metric.without_min_tax(b.steps[FX_STEP]),
         "L-05": metric.without_min_tax(b.steps[MERGE_STEP]),
-        "L-01": metric.without_min_tax(b.final),
-        "L-03": metric.core(b.final),
+        "L-01": metric.without_min_tax(b.phase2),
+        "L-03": metric.core(b.phase2),
+        "L-09": metric.core(b.final),
     }
 
 
@@ -328,14 +345,14 @@ def explain(b: ScenarioBridge) -> list[str]:
             f"{_money(before_fx.disbursements_billed)} → "
             f"{_money(after_fx.disbursements_billed)} {sym}"
         )
-    merged, final = b.steps[MERGE_STEP], b.final
+    merged, final = b.steps[MERGE_STEP], b.phase2
     if len(merged.stages) != len(b.steps[FX_STEP].stages):
         lines.append(
             "L-05: одноимённые этапы v0.3 — один этап с несколькими исполнителями; "
             "итоги проекта не меняются"
         )
     capacity_before = billable_capacity(b.scenarios[MERGE_STEP].firm.team)
-    capacity_after = billable_capacity(b.scenarios[FINAL_STEP].firm.team)
+    capacity_after = billable_capacity(b.scenarios[PHASE2_STEP].firm.team)
     lines.append(
         f"L-01: себестоимость часа v0.3 — это себестоимость контрактного часа, биллируемый "
         f"час дороже в 1/0,65 раза: трудозатраты "
@@ -349,6 +366,18 @@ def explain(b: ScenarioBridge) -> list[str]:
             f"выручки — работает минимальный налог {percent(terms.min_rate)}%: "
             f"{_money(final.tax.min_tax)} {sym} вместо {_money(final.tax.regular_tax)} {sym} "
             f"налога с прибыли"
+        )
+    if b.final.disbursements_billed != final.disbursements_billed:
+        names = ", ".join(
+            f"«{item.name}» {_money(item.amount)} {sym}"
+            for item in b.final.disbursements
+            if item.billable and item.name not in {d.name for d in final.disbursements}
+        )
+        lines.append(
+            f"L-09: пошлины из каталога получили суммы фазы 3 ({names}): возмещаемые "
+            f"расходы {_money(final.disbursements_billed)} → "
+            f"{_money(b.final.disbursements_billed)} {sym}; к оплате растёт на столько же, "
+            f"NNE не меняется"
         )
     lines.extend(_stage_explanations(b))
     if not b.fixed:
@@ -512,11 +541,11 @@ NAMED_DESCRIPTIONS: Mapping[str, str] = {
     "legacy_fixed_basic": "контрольный сценарий 2 v0.3, фикс 30%, УСН 6%, ставок для клиента нет",
     "stage_flags_traffic_light": "фикс 30% с четырьмя этапами всех цветов светофора",
     "both_mode_mixed_currency": "режим «Оба», рубли и тенге, налог по РФ",
-    "catalog_duties_are_zero": "пошлины из каталога (суммы нулевые, L-09 — фаза 3)",
+    "catalog_duties_are_zero": "пошлины из каталога Роспатента (в v0.3 суммы нулевые, L-09)",
     "duplicate_stage_names": "пирамида, заданная в v0.3 одноимёнными этапами (L-05)",
 }
 
-HEADER = """# Было/стало: characterization-сценарии v0.3 в методологии фазы 2
+HEADER = """# Было/стало: characterization-сценарии v0.3 в методологии фаз 2–3
 
 > Документ сгенерирован: `uv run python -m tests.characterization.bridge`.
 > Не редактировать вручную: `tests/characterization/test_phase2_bridge.py`
@@ -526,7 +555,7 @@ HEADER = """# Было/стало: characterization-сценарии v0.3 в м�
 ## Как читать
 
 - **v0.3** — выход живого v0.3 (снимки `tests/characterization/snapshots/`).
-- **Стало** — выход ядра фазы 2 (снимки `tests/characterization/snapshots/core/`).
+- **Стало** — выход ядра фаз 2–3 (снимки `tests/characterization/snapshots/core/`).
 - Столбцы **L-NN** — насколько изменился показатель, когда включили это
   исправление. Исправления включаются по очереди, слева направо, и в сумме
   дают разницу «стало − v0.3». Числа округлены до рубля (тенге).
@@ -549,6 +578,9 @@ HEADER = """# Было/стало: characterization-сценарии v0.3 в м�
      последний: до этого шага все расчёты идут без него, поэтому столбец
      показывает его действие на итоговых издержках. Минимальный налог
      работает, когда прибыль до налога ниже 1/15 ≈ 6,7% выручки.
+  7. **L-09** (фаза 3) — выбранные пошлины из каталога получили суммы по
+     Положению о пошлинах Роспатента и ценам Казпатента: растут возмещаемые
+     расходы и «к оплате», NNE и маржа не меняются.
 - **L-04, L-19** меняют только этапы (выручка по теневой стоимости, маржа после
   налога с собственными расходами), **L-15** — эффективную ставку налога на
   дашборде. Они показаны в таблицах этапов ниже.

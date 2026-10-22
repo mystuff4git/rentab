@@ -9,8 +9,21 @@
       "underutilization_share_pct": 35.0
     },
     "direct_labor": 33846.153846,
-    "disbursements": [],
-    "disbursements_billed": 0.0,
+    "disbursements": [
+      {
+        "amount": 4000.0,
+        "kind": "billable",
+        "name": "Регистрация заявки на товарный знак и формальная экспертиза",
+        "original": "4000 RUB"
+      },
+      {
+        "amount": 13000.0,
+        "kind": "billable",
+        "name": "Экспертиза заявленного обозначения (товарный знак)",
+        "original": "13000 RUB"
+      }
+    ],
+    "disbursements_billed": 17000.0,
     "disbursements_own": 0.0,
     "leverage": 0.0,
     "lines": [
@@ -49,7 +62,7 @@
     ],
     "target_margin": 0.3,
     "tax": 2400.0,
-    "total_client": 40000.0,
+    "total_client": 57000.0,
     "total_costs": 36776.556777,
     "total_hours": 4.0,
     "underutilization_cost": 11846.153846,
