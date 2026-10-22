@@ -17,7 +17,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, TypeVar, cast
@@ -317,6 +317,10 @@ def init_defaults() -> None:
     st.session_state.setdefault(PROJECT_STAGES, [])
     st.session_state.setdefault(SELECTED_DUTIES, {country.value: [] for country in Country})
     st.session_state.setdefault(CUSTOM_EXPENSES, [])
+    st.session_state.setdefault(ACTUAL_HOURS, None)
+    st.session_state.setdefault(TORNADO_PCT, DEFAULT_TORNADO_PCT)
+    for key in WHATIF_KEYS:
+        st.session_state.setdefault(key, 0)
     projects()
 
 
@@ -804,7 +808,7 @@ def actuals_rows(stages_: list[Stage], rows: list[ActualHours]) -> list[dict[str
     return result
 
 
-def parse_actuals_rows(rows: list[dict[str, Any]]) -> list[ActualHours]:
+def parse_actuals_rows(rows: Iterable[Mapping[Any, Any]]) -> list[ActualHours]:
     """Факт из строк редактора: пустой факт — нет строки; работа вне плана с нулём — убрана."""
     result = []
     for row in rows:
