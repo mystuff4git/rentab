@@ -41,9 +41,10 @@ from ui.labels import (
     TAX_BRANCH_LABELS,
     TORNADO_NOTE_LABELS,
     hours_label,
+    metric_delta,
+    metric_points,
     money,
     pct_label,
-    points_label,
     signed_hours,
     signed_money,
     signed_pct,
@@ -215,12 +216,15 @@ for name, values, color in (
         )
     )
 figure.update_layout(
+    # Десятичная запятая и пробел между разрядами: 1 234 567.
+    separators=", ",
     barmode="group",
     bargap=0.35,
     height=CHART_MARGIN_PX + BAR_HEIGHT_PX * len(bars),
     margin={"t": 10, "b": 10, "l": 10, "r": 10},
     legend={"orientation": "h", "yanchor": "bottom", "y": 1.0},
     xaxis={"title": f"Изменение NNE, {sym}", "tickformat": ",.0f", "zeroline": True},
+    yaxis={"title": None},
 )
 st.plotly_chart(figure, width="stretch")
 st.dataframe(
@@ -270,11 +274,11 @@ def render_metrics(plan: Estimate, changed: Estimate) -> None:
         columns[index % 3].metric(
             label,
             money(after, sym),
-            delta=signed_money(after - before, sym),
+            delta=metric_delta(after - before, sym),
             delta_color=color,
         )
     columns[len(rows) % 3].metric(
-        "Маржа", pct_label(changed.margin), delta=points_label(changed.margin - plan.margin)
+        "Маржа", pct_label(changed.margin), delta=metric_points(changed.margin - plan.margin)
     )
 
 

@@ -26,6 +26,8 @@ from ui.labels import (
     BILLING_RULE_LABELS,
     STAGE_FLAG_LABELS,
     hours_label,
+    metric_delta,
+    metric_points,
     money,
     pct_label,
     points_label,
@@ -40,6 +42,8 @@ from ui.projects import render_project_switcher
 COLOR_PLAN = "#2a78d6"
 COLOR_FACT = "#eb6834"
 HOURS_STEP = 0.5
+TABLE_ROW_PX = 35
+TABLE_BORDER_PX = 3
 BILLED_STEP = 10_000.0
 DELETE_PENDING = "actuals_delete_pending"
 UNPLANNED_STAGE = "unplanned_stage"
@@ -197,16 +201,16 @@ m1, m2, m3, m4 = st.columns(4)
 m1.metric(
     f"Выставлено без НДС, {sym}",
     money(fact.revenue, sym),
-    delta=signed_money(fact.revenue - plan.revenue, sym),
+    delta=metric_delta(fact.revenue - plan.revenue, sym),
 )
 m2.metric(
     f"Издержки, {sym}",
     money(fact.total_costs, sym),
-    delta=signed_money(fact.total_costs - plan.total_costs, sym),
+    delta=metric_delta(fact.total_costs - plan.total_costs, sym),
     delta_color="inverse",
 )
-m3.metric(f"NNE по факту, {sym}", money(fact.nne, sym), delta=signed_money(result.delta_nne, sym))
-m4.metric("Маржа по факту", pct_label(fact.margin), delta=points_label(fact.margin - plan.margin))
+m3.metric(f"NNE по факту, {sym}", money(fact.nne, sym), delta=metric_delta(result.delta_nne, sym))
+m4.metric("Маржа по факту", pct_label(fact.margin), delta=metric_points(fact.margin - plan.margin))
 
 plan_real, fact_real = result.plan_realization, result.fact_realization
 
@@ -282,6 +286,8 @@ st.dataframe(
     pd.DataFrame(rows, columns=["Показатель", "План", "Факт", "Отклонение"]),
     hide_index=True,
     width="stretch",
+    # Все строки итога без прокрутки внутри таблицы: заголовок и строки по 35 px.
+    height=TABLE_ROW_PX * (len(rows) + 1) + TABLE_BORDER_PX,
 )
 st.caption(
     "Реализация — выставлено / теневая стоимость часов по ставкам (без НДС). Больше 100% — "
@@ -368,6 +374,8 @@ for name, values, color in (
         )
     )
 figure.update_layout(
+    # Десятичная запятая и пробел между разрядами: 1 234 567.
+    separators=", ",
     barmode="group",
     bargap=0.35,
     height=320,

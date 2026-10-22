@@ -294,3 +294,24 @@ def points_label(delta: Decimal) -> str:
     rounded = round_to(delta * PERCENT, Decimal("0.01"))
     sign = "+" if rounded > 0 else ("−" if rounded < 0 else "")
     return f"{sign}{format_number(abs(rounded))} п. п."
+
+
+def metric_delta(value: Decimal, symbol: str) -> str | None:
+    """Дельта суммы для `st.metric`: «-69 056 ₽»; None — без изменения.
+
+    Streamlit выбирает стрелку и цвет по ведущему ASCII-минусу, поэтому здесь не «−».
+    """
+    rounded = round_to(value, LABEL_QUANTUM)
+    if rounded == 0:
+        return None
+    sign = "+" if rounded > 0 else "-"
+    return f"{sign}{format_number(abs(rounded))} {symbol}"
+
+
+def metric_points(delta: Decimal) -> str | None:
+    """Дельта доли для `st.metric` в процентных пунктах; None — без изменения."""
+    rounded = round_to(delta * PERCENT, Decimal("0.01"))
+    if rounded == 0:
+        return None
+    sign = "+" if rounded > 0 else "-"
+    return f"{sign}{format_number(abs(rounded))} п. п."

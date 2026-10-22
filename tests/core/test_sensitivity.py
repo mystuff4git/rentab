@@ -386,6 +386,13 @@ def test_fx_factor_in_kzt_project_moves_rub_amounts() -> None:
     assert result.changed.direct_labor == base.direct_labor * d("1.25")
 
 
+def test_fx_of_project_currency_changes_nothing() -> None:
+    # Ползунок курса, оставшийся от другой страны расчёта, к валюте проекта не применяется.
+    scenario = slide3()
+    result = what_if(scenario, WhatIf(fx={Currency.RUB: d("0.1")}))
+    assert result.changed == result.base
+
+
 def test_what_if_combines_factors_and_keeps_project() -> None:
     # Раздел 17.4: часы +100% и утилизация −10%.
     scenario = slide3()

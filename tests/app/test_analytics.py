@@ -52,6 +52,11 @@ def test_what_if_recalculates_without_changing_project() -> None:
     app.slider(key=state.WHATIF_UTILIZATION).set_value(-10).run()
     # Методология, раздел 17.4.
     assert metrics(app)["NNE, ₽"] == "156 444 ₽"
+    # Streamlit красит дельту по ASCII-минусу: убыток — вниз и красным.
+    nne = next(item for item in app.metric if item.label == "NNE, ₽")
+    assert nne.delta == "-69 056 ₽"
+    revenue = next(item for item in app.metric if item.label == "Выручка без НДС, ₽")
+    assert not revenue.delta
     assert app.session_state[state.PROJECT_STAGES] == stages
     assert app.session_state[state.AGREED_PRICE] == 300_000
     app.slider(key=state.WHATIF_PRICE).set_value(-10).run()
