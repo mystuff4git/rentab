@@ -1,4 +1,4 @@
-"""Страница 02: проект и смета (страница v0.3 на ядре, методология фазы 2).
+"""Страница 02: проект и смета (страница v0.3 на ядре, методология фаз 2–3).
 
 Страница собирает этапы с исполнителями (на этапе их может быть несколько),
 пошлины и расходы проекта, модель цены и режим НДС, а по кнопке
@@ -14,7 +14,16 @@ from pydantic import ValidationError
 
 from rentab_core import CurrencyConversionError, FixedPriceError, calculate_estimate
 from rentab_core.analysis.team import blended_rate, leverage
-from rentab_core.duties import duty_disbursements, load_catalog
+from rentab_core.duties import (
+    APPLICANT_CATEGORY_LABELS,
+    QUANTITY_DEFAULTS,
+    QUANTITY_LABELS,
+    ApplicantCategory,
+    Duty,
+    Quantity,
+    duty_disbursements,
+    load_catalog,
+)
 from rentab_core.estimate import resolve_stages
 from rentab_core.models import (
     ROLE_LABELS,
@@ -32,9 +41,11 @@ from ui import state
 from ui.labels import (
     COUNTRY_LABELS,
     CUSTOM_EXPENSE_LABELS,
+    NEEDS_REVIEW_MARK,
     PATENT_OFFICE_LABELS,
     PRICING_LABELS,
     VAT_MODE_LABELS,
+    money,
 )
 
 # Слайдер целевой маржи, % (02_Проект.py:67–70).
@@ -204,7 +215,9 @@ else:
 
 # Показатели команды пересчитываются ядром на каждом изменении этапов.
 try:
-    resolved, _ = resolve_stages(state.firm(), Project(stages=tuple(stages)), calc_country.currency)
+    resolved, _ = resolve_stages(
+        state.firm(), Project(stages=tuple(stages)), calc_country.currency, calc_country
+    )
 except CurrencyConversionError as exc:
     st.warning(f"{exc}. Курсы задаются на странице «Настройка».")
     resolved = []
@@ -311,31 +324,98 @@ st.markdown("---")
 # БЛОК 4 — РАСХОДЫ ПРОЕКТА
 # ===========================================================================
 selected = state.selected_duties()
+
+
+def project_duties(country: Country) -> list[Disbursement]:
+    """Пошлины страны с количествами и категорией заявителя из виджетов."""
+    return duty_disbursements(
+        country,
+        selected.get(country.value, []),
+        state.duty_quantities(country),
+        state.duty_category(country),
+    )
+
+
 with st.expander("4. Расходы проекта — пошлины, субподряд и др. (необязательно)"):
     st.markdown("#### Пошлины из каталога")
     st.caption(
         "Пошлины — возмещаемые расходы: клиент их оплачивает отдельной строкой, "
-        "в выручку и налоговую базу они не входят."
+        "в выручку и налоговую базу они не входят. Размер зависит от числа классов МКТУ "
+        f"и пунктов формулы. {NEEDS_REVIEW_MARK} — сумма не сверена с первоисточником "
+        "полностью (docs/rates_verification.md); пошлины без суммы в смету не попадают."
     )
     for country in jurisdiction.countries:
         catalog = load_catalog(country)
-        amounts = catalog.amounts()
         sym = CURRENCY_SYMBOLS[catalog.currency]
+        duties_by_action = {duty.action: duty for duty in catalog.duties}
+
+        def duty_label(
+            action: str, duties: dict[str, Duty] = duties_by_action, symbol: str = sym
+        ) -> str:
+            """Пошлина в списке: название, базовая сумма и пометка проверки."""
+            duty = duties[action]
+            mark = f" {NEEDS_REVIEW_MARK}" if duty.needs_review else ""
+            if duty.amount <= 0:
+                return f"{action} — сумма не установлена{mark}"
+            return f"{action} — от {money(duty.amount, symbol)}{mark}"
+
         st.markdown(f"**{PATENT_OFFICE_LABELS[country]} ({sym})**")
         chosen = st.multiselect(
             f"Выберите пошлины ({country.value})",
-            options=list(amounts),
-            default=selected.get(country.value, []),
+            options=list(duties_by_action),
+            default=[a for a in selected.get(country.value, []) if a in duties_by_action],
+            format_func=duty_label,
             key=f"duties_multiselect_{country.value}",
         )
         selected[country.value] = chosen
-        if chosen:
-            subtotal = decimal_sum(amounts[action] for action in chosen)
-            st.info(f"Сумма: **{subtotal:,.0f} {sym}**")
-    st.caption(
-        "Суммы пошлин в каталогах пока не заполнены (0, фаза 3), поэтому выбранные "
-        "пошлины в смету не попадают. Введите пошлину как произвольный возмещаемый расход."
-    )
+        if not chosen:
+            continue
+        quantities = sorted(
+            {q for action in chosen for q in duties_by_action[action].quantities},
+            key=list(Quantity).index,
+        )
+        if catalog.categories or quantities:
+            columns = st.columns(max(len(quantities) + int(catalog.categories), 1))
+            defaults = state.duty_quantities(country)
+            for column, quantity in zip(columns, quantities, strict=False):
+                key = state.duty_quantity_key(country, quantity)
+                st.session_state.setdefault(key, defaults[quantity])
+                column.number_input(
+                    QUANTITY_LABELS[quantity],
+                    min_value=0 if quantity in QUANTITY_DEFAULTS else 1,
+                    step=1,
+                    key=key,
+                )
+            if catalog.categories:
+                columns[-1].selectbox(
+                    "Заявитель",
+                    options=list(ApplicantCategory),
+                    format_func=lambda c: APPLICANT_CATEGORY_LABELS[c],
+                    key=state.duty_category_key(country),
+                )
+        items = project_duties(country)
+        if items:
+            st.dataframe(
+                pd.DataFrame(
+                    [{"Пошлина": item.name, "Сумма": money(item.amount, sym)} for item in items]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+            subtotal = decimal_sum(item.amount for item in items)
+            vat_note = ", с НДС" if catalog.vat_included else ""
+            st.info(f"Сумма: **{money(subtotal, sym)}**{vat_note}")
+        skipped = [a for a in chosen if duties_by_action[a].amount <= 0]
+        if skipped:
+            st.warning(
+                "Без суммы, в смету не попадут: "
+                + "; ".join(skipped)
+                + ". Введите их как произвольный возмещаемый расход."
+            )
+        review = [duties_by_action[a] for a in chosen if duties_by_action[a].needs_review]
+        for duty in review:
+            if duty.amount > 0:
+                st.caption(f"{NEEDS_REVIEW_MARK} {duty.action}: {duty.note}")
 
     st.markdown("---")
     st.markdown("#### Произвольный расход")
@@ -410,11 +490,7 @@ if calc_disabled:
     )
 
 if st.button("💰 Рассчитать смету", type="primary", disabled=calc_disabled):
-    duties = [
-        item
-        for country in jurisdiction.countries
-        for item in duty_disbursements(country, selected.get(country.value, []))
-    ]
+    duties = [item for country in jurisdiction.countries for item in project_duties(country)]
     try:
         st.session_state[state.ESTIMATE] = calculate_estimate(state.scenario(duties))
     except FixedPriceError as exc:
@@ -448,6 +524,17 @@ if result is not None:
         f"Налог: {result.tax.tax:,.0f} {sym} · Возмещаемые расходы: "
         f"{result.disbursements_billed:,.0f} {sym}"
     )
+    if result.tax.deduction > 0:
+        capped = " — упёрлось в предел 50%" if result.tax.deduction_capped else ""
+        st.caption(
+            f"Налог УСН «доходы» уменьшен на страховые взносы на часах проекта: "
+            f"{money(result.tax.deduction, sym)} из {money(result.tax.contributions, sym)}{capped}."
+        )
+    if result.tax.nondeductible > 0:
+        st.caption(
+            f"Вознаграждение из прибыли {money(result.tax.nondeductible, sym)} не уменьшает "
+            "базу налога «доходы − расходы»."
+        )
     for missing in result.unresolved_assignments:
         st.warning(
             f"Этап «{missing.stage_name}»: исполнителя «{missing.employee}» нет в команде, "

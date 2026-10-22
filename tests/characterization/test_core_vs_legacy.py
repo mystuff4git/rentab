@@ -222,7 +222,9 @@ def test_core_differs_from_legacy_only_by_tax_methodology(scenario: dict[str, An
         event("v0.3: фикс-цена недостижима")
         if terms_reachable:
             event("L-02: цена существует, когда НДС не в знаменателе")
-            assert estimate.margin == estimate.target_margin or estimate.revenue == 0
+            # Деление в Decimal оставляет погрешность порядка 1e-28 — сравнение с допуском.
+            margin_gap = abs(estimate.margin - estimate.target_margin)
+            assert margin_gap <= RATIO_TOLERANCE or estimate.revenue == 0
         return
     assert core_warnings == legacy_warnings
     if not terms_reachable:

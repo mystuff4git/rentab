@@ -1,4 +1,7 @@
-"""Единый налоговый модуль: режимы РФ и РК, минимальный налог, НДС, взносы."""
+"""Единый налоговый модуль: режимы РФ и РК, минимальный налог, НДС, уменьшение на взносы.
+
+Взносы работодателя с оклада — `test_payroll.py`.
+"""
 
 from __future__ import annotations
 
@@ -10,23 +13,19 @@ from hypothesis import strategies as st
 
 from rentab_core.models import (
     AusnProfile,
-    Country,
-    Jurisdiction,
-    JurisdictionMode,
     KzForm,
     KzOurProfile,
     KzVat,
     NpdClientType,
     NpdProfile,
     OsnoProfile,
-    SocialContributions,
     TaxProfile,
     UsnObject,
     UsnProfile,
     UsnVat,
 )
 from rentab_core.results import TaxBase
-from rentab_core.tax import calculate_tax, employer_contribution_rate, tax_terms
+from rentab_core.tax import calculate_tax, tax_terms
 from tests.core.factories import d
 
 USN_15 = UsnProfile(tax_object=UsnObject.INCOME_MINUS_EXPENSES)
@@ -158,24 +157,52 @@ def test_tax_formula(revenue: int, costs: int, profile: TaxProfile) -> None:
     assert result.vat == terms.vat_rate * r
 
 
-@pytest.mark.parametrize(
-    ("jurisdiction", "country", "expected"),
-    [
-        (None, None, "0.30"),
-        (Jurisdiction(), None, "0.30"),
-        (Jurisdiction(rf=UsnProfile(social_contributions=SocialContributions.ZERO)), None, "0"),
-        (Jurisdiction(rf=OsnoProfile()), None, "0.30"),
-        (Jurisdiction(rf=AusnProfile()), None, "0"),
-        (Jurisdiction(rf=NpdProfile()), None, "0"),
-        (Jurisdiction(mode=JurisdictionMode.KZ), None, "0.115"),
-        (Jurisdiction(mode=JurisdictionMode.KZ), Country.RF, "0.115"),
-        # Режим «Оба»: взносы — по стране трудоустройства сотрудника (L-06).
-        (Jurisdiction(mode=JurisdictionMode.BOTH, rf=NpdProfile()), None, "0"),
-        (Jurisdiction(mode=JurisdictionMode.BOTH, kz=KzOurProfile()), Country.RF, "0.30"),
-        (Jurisdiction(mode=JurisdictionMode.BOTH, kz=KzOurProfile()), Country.KZ, "0.115"),
-    ],
+def test_usn_income_terms_allow_deduction_of_contributions() -> None:
+    assert tax_terms(UsnProfile()).contributions_deduction_cap == d("0.5")
+    for profile in (USN_15, AusnProfile(), NpdProfile(), OsnoProfile(), KzOurProfile()):
+        assert tax_terms(profile).contributions_deduction_cap == 0
+
+
+def test_contributions_reduce_usn_income_tax_up_to_half() -> None:
+    # Пример 11.6: 6% × 100 000 = 6 000, взносы 3 600, предел 50% — 3 000.
+    terms = tax_terms(UsnProfile())
+    capped = calculate_tax(terms, d(100_000), d(35_200), contributions=d(3_600))
+    assert capped.deduction == d(3_000)
+    assert capped.tax == d(3_000)
+    assert capped.deduction_capped
+    below = calculate_tax(terms, d(100_000), d(35_200), contributions=d(2_000))
+    assert below.tax == d(4_000)
+    assert not below.deduction_capped
+
+
+def test_contributions_do_not_reduce_other_regimes() -> None:
+    for profile in (AusnProfile(), USN_15, OsnoProfile()):
+        terms = tax_terms(profile)
+        plain = calculate_tax(terms, d(100_000), d(35_200))
+        with_contributions = calculate_tax(terms, d(100_000), d(35_200), contributions=d(3_600))
+        assert with_contributions.tax == plain.tax
+        assert with_contributions.contributions == 0
+        assert with_contributions.deduction == 0
+
+
+def test_nondeductible_reward_raises_profit_base() -> None:
+    # Пример 11.6: max(15% × (100 000 − 35 200 + 8 000), 1 000) = 10 920.
+    terms = tax_terms(USN_15)
+    result = calculate_tax(terms, d(100_000), d(35_200), nondeductible=d(8_000))
+    assert result.taxable_base == d(72_800)
+    assert result.tax == d(10_920)
+    assert result.nondeductible == d(8_000)
+    income = calculate_tax(tax_terms(UsnProfile()), d(100_000), d(35_200), nondeductible=d(8_000))
+    assert income.tax == d(6_000)
+    assert income.nondeductible == 0
+
+
+@given(
+    revenue=st.integers(min_value=0, max_value=10**8),
+    contributions=st.integers(min_value=0, max_value=10**7),
 )
-def test_employer_contribution_rate(
-    jurisdiction: Jurisdiction | None, country: Country | None, expected: str
-) -> None:
-    assert employer_contribution_rate(jurisdiction, country) == Decimal(expected)
+def test_deduction_formula(revenue: int, contributions: int) -> None:
+    terms = tax_terms(UsnProfile())
+    r, s = Decimal(revenue), Decimal(contributions)
+    result = calculate_tax(terms, r, d(0), contributions=s)
+    assert result.tax == max(terms.rate * r - s, d("0.5") * terms.rate * r)

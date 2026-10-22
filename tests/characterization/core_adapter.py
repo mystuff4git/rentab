@@ -13,10 +13,11 @@
   одноимённые этапы остаются разными. Разница с v0.3 — только методология
   налога и этапов: НДС сверху (L-02), минимальный налог (L-03), этапы по
   теневой стоимости (L-04).
-- `FINAL` — перевод фазы 2: себестоимость часа v0.3 — это себестоимость
+- `FINAL` — перевод фаз 2–3: себестоимость часа v0.3 — это себестоимость
   контрактного часа (W = cost_rate × H, u = 0,65), «Прочее» — собственный
   расход, суммы пересчитываются по курсу, одноимённые этапы сливаются в один
-  этап с несколькими назначениями.
+  этап с несколькими назначениями, пошлины из каталога получают суммы
+  фазы 3 (L-09; в v0.3 все суммы нулевые).
 """
 
 from __future__ import annotations
@@ -114,12 +115,15 @@ class LegacyMapping:
             ставки команды — в валюте страны расчёта, как в v0.3.
         merge_stage_names: Сливать одноимённые этапы в один (L-05); иначе
             одноимённые этапы получают суффиксы « #2», « #3».
+        catalog_duties: Брать выбранные пошлины из каталогов фазы 3 (L-09);
+            иначе пропускать их, как v0.3 с нулевыми суммами.
     """
 
     utilization: Decimal | None
     extra_as_own: bool
     convert_currency: bool
     merge_stage_names: bool
+    catalog_duties: bool = False
 
 
 NEUTRAL = LegacyMapping(
@@ -130,14 +134,16 @@ FINAL = LegacyMapping(
     extra_as_own=True,
     convert_currency=True,
     merge_stage_names=True,
+    catalog_duties=True,
 )
 # Шаги моста «было/стало»: каждый включает одно исправление поверх предыдущего.
 BRIDGE_STEPS: tuple[tuple[str, LegacyMapping], ...] = (
     ("L-02, L-03, L-04", NEUTRAL),
     ("L-12", replace(NEUTRAL, extra_as_own=True)),
     ("L-06", replace(NEUTRAL, extra_as_own=True, convert_currency=True)),
-    ("L-05", replace(FINAL, utilization=None)),
-    ("L-01", FINAL),
+    ("L-05", replace(FINAL, utilization=None, catalog_duties=False)),
+    ("L-01", replace(FINAL, catalog_duties=False)),
+    ("L-09", FINAL),
 )
 
 
@@ -321,7 +327,7 @@ def scenario_to_core(
             warnings.append(f"Пропущен накладной расход: {exc}")
 
     disbursements: list[Disbursement] = []
-    selected_duties = scenario.get("selected_duties", {})
+    selected_duties = scenario.get("selected_duties", {}) if mapping.catalog_duties else {}
     for country in jurisdiction.countries:
         disbursements.extend(duty_disbursements(country, selected_duties.get(country.value, [])))
     for item in scenario.get("custom_expenses", []):

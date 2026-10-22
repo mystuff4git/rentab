@@ -1,69 +1,97 @@
-# Каталог пошлин: Казпатент.
+# Каталог пошлин: Казпатент (РГП «Национальный институт интеллектуальной
+# собственности»).
 #
-# Позиции перенесены из Rentab v0.3 (legacy/rentab_v03/data/qazpatent_duties.json).
-# В v0.3 у всех позиций amount = 0 (L-09): выбор пошлины из каталога ни на что
-# не влияет, нулевые суммы пропускаются. Суммы заполняются по первоисточнику
-# (размер пошлин Казпатента (в МРП)) в фазе 3; до этого у каждой позиции needs_review: true.
+# Казпатент берёт не государственную пошлину в МРП, а плату по прейскуранту
+# НИИС в тенге с НДС 16%. Цены действуют с 01.01.2026; приказ, которым они
+# утверждены, не установлен. Суммы взяты из выдержек прейскуранта (PDF из
+# окружения разработки был недоступен), соответствие колонок категориям
+# заявителя подтверждено только для заявки на товарный знак — поэтому у всех
+# позиций needs_review: true. Сумма 0 — размер не найден.
 country: KZ
 currency: KZT
+source: "Цены на работы и услуги РГП «Национальный институт интеллектуальной собственности» с 01.01.2026 (с НДС 16%)"
+source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+effective_from: 2026-01-01
+vat_included: true
+categories: true
 duties:
-  - action: "Подача заявки на изобретение"
-    amount: 0
-    source_url: null
+  - action: "Подача заявки на товарный знак и экспертиза (до 3 классов МКТУ)"
+    amount: 117812.50
+    amount_by_category:
+      sme: 88359.38
+      individual: 82468.75
+    aliases: ["Подача заявки на товарный знак (1 класс МКТУ)"]
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
     needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Экспертиза заявки на изобретение по существу"
-    amount: 0
-    source_url: null
+    note: "Юрлицо / МСП / физлицо. Доплата за классы сверх 3 в выдержке не найдена"
+  - action: "Регистрация товарного знака, публикация и выдача свидетельства (до 3 классов МКТУ)"
+    amount: 37849.64
+    extras:
+      - {quantity: classes, included: 3, per_unit: 11185.72}
+    aliases: ["Регистрация товарного знака и выдача свидетельства"]
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
     needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Выдача патента на изобретение"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Подача заявки на полезную модель"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Выдача патента на полезную модель"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Подача заявки на промышленный образец"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Выдача патента на промышленный образец"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Подача заявки на товарный знак (1 класс МКТУ)"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Экспертиза товарного знака по существу (1 класс МКТУ)"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
-  - action: "Регистрация товарного знака и выдача свидетельства"
-    amount: 0
-    source_url: null
-    needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
+    note: "+11 185,72 ₸ за каждый класс сверх 3. Категория заявителя для суммы не установлена"
   - action: "Продление срока действия регистрации товарного знака"
     amount: 0
     source_url: null
     needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
+    note: "Выдержки прейскуранта дают разные суммы (8 919,24 ₸; 16 053,58 / 12 040,19 / 11 237,50 ₸), колонки не установлены; сумма не внесена"
+  - action: "Приём заявки на изобретение и формальная экспертиза"
+    amount: 21045.88
+    aliases: ["Подача заявки на изобретение"]
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+    needs_review: true
+    note: "Первая колонка прейскуранта; категория заявителя не установлена"
+  - action: "Экспертиза заявки на изобретение по существу"
+    amount: 69350.60
+    extras:
+      - {quantity: independent_claims, included: 1, per_unit: 55430.60}
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+    needs_review: true
+    note: "Первая колонка прейскуранта; доплата за независимый пункт сверх 1 в веб-версии и PDF расходится"
+  - action: "Публикация сведений о выдаче патента на изобретение"
+    amount: 34441.56
+    aliases: ["Выдача патента на изобретение"]
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+    needs_review: true
+    note: "Первая колонка прейскуранта; категория заявителя не установлена"
+  - action: "Приём заявки на полезную модель и экспертиза"
+    amount: 17038.08
+    aliases: ["Подача заявки на полезную модель"]
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+    needs_review: true
+    note: "Первая колонка прейскуранта; категория заявителя не установлена"
+  - action: "Регистрация полезной модели и выдача патента"
+    amount: 0
+    aliases: ["Выдача патента на полезную модель"]
+    source_url: null
+    needs_review: true
+    note: "Размер не найден в выдержках прейскуранта"
+  - action: "Формальная экспертиза заявки на промышленный образец"
+    amount: 18684.12
+    aliases: ["Подача заявки на промышленный образец"]
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+    needs_review: true
+    note: "Первая колонка прейскуранта; категория заявителя не установлена"
+  - action: "Экспертиза заявки на промышленный образец по существу"
+    amount: 38118.76
+    source_url: https://kazpatent.kz/storage/app/media/Tarify%2001.01.2026/tarify-s-nds-16.pdf
+    needs_review: true
+    note: "Первая колонка прейскуранта; категория заявителя не установлена"
+  - action: "Регистрация промышленного образца и выдача патента"
+    amount: 0
+    aliases: ["Выдача патента на промышленный образец"]
+    source_url: null
+    needs_review: true
+    note: "Размер не найден в выдержках прейскуранта"
   - action: "Регистрация договора об уступке / лицензии на объект ИС"
     amount: 0
     source_url: null
     needs_review: true
-    note: "v0.3: уточнить на сайте QazPatent"
+    note: "Размер не найден в выдержках прейскуранта"
+  - action: "Возражение (апелляция) по товарному знаку или патенту"
+    amount: 0
+    source_url: null
+    needs_review: true
+    note: "Размер не найден в выдержках прейскуранта"

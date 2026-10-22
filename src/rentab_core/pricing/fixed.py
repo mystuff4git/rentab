@@ -3,10 +3,13 @@
 Цена «издержки + маржа» — наименьшая выручка без НДС P, при которой
 NNE = m* × P. Закрытые формулы (L-03; в v0.3 цена искалась итерациями):
 
-    база «доходы»:            P = C / (1 − m* − t)
-    база «доходы − расходы»:  P_A = C(1 − t) / (1 − t − m*)
+    база «доходы»:            P = max((C − S) / (1 − t − m*), C / (1 − (1 − κ)t − m*))
+    база «доходы − расходы»:  P_A = (C(1 − t) + tN) / (1 − t − m*)
     минимальный налог:        P_B = C / (1 − t_min − m*)
                               P = max(P_A, P_B)
+
+S — взносы на часах проекта (уменьшают налог УСН «доходы» не более чем на κ),
+N — вознаграждение из прибыли (не уменьшает базу «доходы − расходы»).
 
 НДС в цену не закладывается: он начисляется сверху (L-02).
 """
@@ -30,10 +33,18 @@ def _unreachable(terms: TaxTerms, target_margin: Decimal, rate: Decimal) -> Fixe
     )
 
 
-def price_without_min_tax(terms: TaxTerms, costs: Decimal, target_margin: Decimal) -> Decimal:
+def price_without_min_tax(
+    terms: TaxTerms,
+    costs: Decimal,
+    target_margin: Decimal,
+    *,
+    contributions: Decimal = ZERO,
+    nondeductible: Decimal = ZERO,
+) -> Decimal:
     """Цена «издержки + маржа» без учёта минимального налога.
 
-    «доходы»: C / (1 − m* − t); «доходы − расходы»: C(1 − t) / (1 − t − m*).
+    «доходы»: max((C − S) / (1 − m* − t), C / (1 − (1 − κ)t − m*));
+    «доходы − расходы»: (C(1 − t) + tN) / (1 − t − m*).
 
     Raises:
         FixedPriceError: 1 − m* − t ≤ 0.
@@ -41,18 +52,32 @@ def price_without_min_tax(terms: TaxTerms, costs: Decimal, target_margin: Decima
     denominator = ONE - target_margin - terms.rate
     if denominator <= 0:
         raise _unreachable(terms, target_margin, terms.rate)
-    if terms.base == TaxBase.INCOME:
-        return costs / denominator
-    return costs * (ONE - terms.rate) / denominator
+    if terms.base == TaxBase.PROFIT:
+        return (costs * (ONE - terms.rate) + terms.rate * nondeductible) / denominator
+    price = (costs - contributions) / denominator
+    cap = terms.contributions_deduction_cap
+    if cap > 0:
+        # Знаменатель не меньше 1 − m* − t > 0: предел κ только уменьшает налог.
+        price = max(price, costs / (ONE - target_margin - (ONE - cap) * terms.rate))
+    return price
 
 
-def cost_plus_price(terms: TaxTerms, costs: Decimal, target_margin: Decimal) -> Decimal:
+def cost_plus_price(
+    terms: TaxTerms,
+    costs: Decimal,
+    target_margin: Decimal,
+    *,
+    contributions: Decimal = ZERO,
+    nondeductible: Decimal = ZERO,
+) -> Decimal:
     """Цена «издержки + маржа» без НДС.
 
     Args:
         terms: Параметры налогового режима.
         costs: Издержки проекта C = Labor + OH + Own.
         target_margin: Целевая маржа NNE m*, доля в [0; 1).
+        contributions: Взносы на часах проекта S (база «доходы» с κ > 0).
+        nondeductible: Вознаграждение из прибыли N (база «доходы − расходы»).
 
     Returns:
         Наименьшая P, при которой NNE = m* × P; при C = 0 — 0.
@@ -62,7 +87,9 @@ def cost_plus_price(terms: TaxTerms, costs: Decimal, target_margin: Decimal) -> 
     """
     if not ZERO <= target_margin < ONE:
         raise FixedPriceError(f"Целевая маржа должна быть в [0; 1), получено {target_margin}")
-    price = price_without_min_tax(terms, costs, target_margin)
+    price = price_without_min_tax(
+        terms, costs, target_margin, contributions=contributions, nondeductible=nondeductible
+    )
     if terms.min_rate > 0:
         denominator = ONE - terms.min_rate - target_margin
         if denominator <= 0:

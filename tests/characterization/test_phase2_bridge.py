@@ -4,7 +4,9 @@
   отличается только методологией НДС (L-02): для почасовой модели NNE растёт
   ровно на НДС v0.3, для фикс-цены НДС уходит из знаменателя формулы.
 - Слияние одноимённых этапов (L-05) не меняет итогов проекта.
-- Последний шаг моста — это снимок ядра фазы 2.
+- Суммы пошлин из каталога (L-09, фаза 3) меняют только возмещаемые расходы
+  и «к оплате».
+- Последний шаг моста — это снимок ядра фаз 2–3.
 - `docs/phase2_before_after.md` совпадает с расчётом (перезапись —
   `--update-snapshots` или `python -m tests.characterization.bridge`).
 """
@@ -81,6 +83,15 @@ def test_stage_merge_does_not_change_totals(bridge: ScenarioBridge) -> None:
     before, after = bridge.steps[FX_STEP], bridge.steps[MERGE_STEP]
     for metric in METRICS:
         assert metric.core(before) == metric.core(after)
+
+
+@pytest.mark.parametrize("bridge", BRIDGES, ids=IDS)
+def test_catalog_duties_change_only_billed_disbursements(bridge: ScenarioBridge) -> None:
+    before, after = bridge.phase2, bridge.final
+    for metric in (METRICS[0], METRICS[2], METRICS[3]):
+        assert metric.core(before) == metric.core(after)
+    added = after.disbursements_billed - before.disbursements_billed
+    assert after.total_client - before.total_client == added
 
 
 @pytest.mark.parametrize("bridge", BRIDGES, ids=IDS)

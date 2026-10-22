@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 from typing import Any
 
@@ -14,18 +15,24 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from rentab_core import calculate_estimate
+from rentab_core.duties import ApplicantCategory, Quantity
+from rentab_core.errors import ExchangeRateFetchError
+from rentab_core.fx import RateSource, RatesQuote
 from rentab_core.models import (
     CappedPricing,
     Country,
     Disbursement,
     DisbursementKind,
+    ExchangeRates,
     Jurisdiction,
     JurisdictionMode,
     KzOurProfile,
     MonthlyCost,
+    NpdProfile,
     OsnoProfile,
     PricingModel,
     Salary,
+    SocialContributions,
     UsnProfile,
     UsnVat,
 )
@@ -140,8 +147,83 @@ def test_setup_page_contribution_rate_follows_employee_country() -> None:
     session = {state.JURISDICTION: Jurisdiction(mode=JurisdictionMode.BOTH)}
     app = run_page("pages/01_Настройка.py", session)
     app.radio(key="jurisdiction_choice").set_value(JurisdictionMode.BOTH).run()
+    # Без оклада — номинальная ставка РФ: 30% + 0,2% на травматизм.
+    assert app.number_input(key="add_member_employer_rate_pct").value == pytest.approx(30.2)
     app.selectbox(key="add_member_currency").set_value(Currency.KZT.value).run()
-    assert app.number_input(key="add_member_employer_rate_pct").value == pytest.approx(11.5)
+    # РК, ТОО: 3% + 5% × 0,9 + 3,5% + 6% × 0,88.
+    assert app.number_input(key="add_member_employer_rate_pct").value == pytest.approx(16.28)
+
+
+def test_setup_page_contribution_rate_follows_salary() -> None:
+    app = run_page("pages/01_Настройка.py")
+    app.number_input(key="add_member_gross_salary").set_value(300_000.0).run()
+    # 3,6 млн ₽ за год: 30% до базы 2 979 000, 15,1% сверх, 0,2% на травматизм.
+    rate = app.number_input(key="add_member_employer_rate_pct").value
+    assert rate == pytest.approx(27.63)
+    assert any("Взносы за год (общий тариф): 994 671 ₽" in c.value for c in app.caption)
+    # Ручная ставка не пересчитывается, пока её не вернули к расчёту.
+    app.number_input(key="add_member_employer_rate_pct").set_value(25.0).run()
+    app.number_input(key="add_member_gross_salary").set_value(100_000.0).run()
+    assert app.number_input(key="add_member_employer_rate_pct").value == 25.0
+    click(app, "↺ Ставка по расчёту")
+    assert app.number_input(key="add_member_employer_rate_pct").value == pytest.approx(30.2)
+
+
+def test_setup_page_adds_profit_paid_partner() -> None:
+    app = run_page("pages/01_Настройка.py")
+    app.text_input(key="add_member_name").input("Иванов")
+    app.radio(key="add_member_compensation").set_value("monthly").run()
+    app.number_input(key="add_member_monthly_cost").set_value(400_000.0)
+    app.checkbox(key="add_member_paid_from_profit").check()
+    app.run()
+    click(app, "➕ Добавить сотрудника")
+    (employee,) = app.session_state[state.TEAM]
+    assert employee.paid_from_profit
+    assert not app.checkbox(key="add_member_paid_from_profit").value
+
+
+def test_setup_page_checks_regime_eligibility() -> None:
+    app = run_page("pages/01_Настройка.py")
+    app.radio(key="rf_regime_choice").set_value("npd").run()
+    app.number_input(key=state.FACT_INCOME_RF).set_value(3_000_000.0).run()
+    errors = [e.value for e in app.error]
+    assert any("НПД применяют только физлица и ИП" in e for e in errors)
+    assert any("2 400 000 ₽" in e for e in errors)
+    assert isinstance(app.session_state[state.JURISDICTION].rf, NpdProfile)
+
+    app.radio(key="rf_regime_choice").set_value("osno").run()
+    assert app.success[0].value == "Выбранный режим применим по введённым данным."
+    app.selectbox(key="rf_osno_sc").set_value(SocialContributions.SME).run()
+    jurisdiction = app.session_state[state.JURISDICTION]
+    assert jurisdiction.rf == OsnoProfile(social_contributions=SocialContributions.SME)
+
+
+def test_setup_page_loads_exchange_rates(monkeypatch: pytest.MonkeyPatch) -> None:
+    quote = RatesQuote(
+        rates=ExchangeRates(rub_per_kzt=d("0.1543"), rub_per_usd=d("81.2345")),
+        source=RateSource.CBR,
+        rate_date=dt.date(2026, 10, 22),
+        requested=dt.date(2026, 10, 22),
+    )
+    monkeypatch.setattr("rentab_core.fx.fetch_rates", lambda on: quote)
+    app = run_page("pages/01_Настройка.py")
+    click(app, "⬇️ Загрузить курсы ЦБ РФ")
+    assert app.number_input(key=state.RUB_PER_KZT).value == pytest.approx(0.1543)
+    assert app.number_input(key=state.RUB_PER_USD).value == pytest.approx(81.2345)
+    assert any("Загружены курсы ЦБ РФ на 22.10.2026" in c.value for c in app.caption)
+
+
+def test_setup_page_keeps_manual_rates_when_loading_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def offline(on: dt.date) -> RatesQuote:
+        raise ExchangeRateFetchError("Курсы не загружены, введите их вручную.")
+
+    monkeypatch.setattr("rentab_core.fx.fetch_rates", offline)
+    app = run_page("pages/01_Настройка.py")
+    click(app, "⬇️ Загрузить курсы ЦБ РФ")
+    assert "введите их вручную" in app.warning[0].value
+    assert app.number_input(key=state.RUB_PER_KZT).value == pytest.approx(0.18)
 
 
 def test_setup_page_shows_capacity_and_overhead_rate() -> None:
@@ -257,6 +339,56 @@ def test_project_page_reports_missing_exchange_rate() -> None:
     app.radio(key=state.CALC_COUNTRY).set_value(Country.KZ.value).run()
     click(app, "💰 Рассчитать смету")
     assert "Укажите курс ₽ за 1 ₸" in app.error[0].value
+
+
+def test_project_page_duties_depend_on_classes() -> None:
+    session = project_session(
+        **{
+            state.SELECTED_DUTIES: {
+                "RF": [
+                    "Регистрация заявки на товарный знак и формальная экспертиза",
+                    "Экспертиза заявленного обозначения (товарный знак)",
+                ],
+                "KZ": [],
+            },
+            state.duty_quantity_key(Country.RF, Quantity.CLASSES): 3,
+        }
+    )
+    app = run_page("pages/02_Проект.py", session)
+    assert app.number_input(key=state.duty_quantity_key(Country.RF, Quantity.CLASSES)).value == 3
+    click(app, "💰 Рассчитать смету")
+    estimate = app.session_state[state.ESTIMATE]
+    # 4 000 + 1 000 × 2 класса; 13 000 + 2 500 × 2 класса.
+    assert estimate.disbursements_billed == d(24_000)
+
+
+def test_project_page_kazpatent_price_depends_on_applicant() -> None:
+    jurisdiction = Jurisdiction(mode=JurisdictionMode.KZ)
+    action = "Подача заявки на товарный знак и экспертиза (до 3 классов МКТУ)"
+    session = project_session(
+        jurisdiction=jurisdiction,
+        **{
+            state.SELECTED_DUTIES: {"RF": [], "KZ": [action]},
+            state.duty_category_key(Country.KZ): ApplicantCategory.SME,
+        },
+    )
+    app = run_page("pages/02_Проект.py", session)
+    click(app, "💰 Рассчитать смету")
+    assert app.session_state[state.ESTIMATE].disbursements_billed == d("88359.38")
+
+
+def test_project_page_shows_contribution_deduction() -> None:
+    lawyer = ASSOCIATE.model_copy(
+        update={
+            "compensation": Salary(gross_salary=d(200_000), employer_contribution_rate=d("0.3"))
+        }
+    )
+    session = project_session(**{state.TEAM: [PARTNER, lawyer]})
+    app = run_page("pages/02_Проект.py", session)
+    click(app, "💰 Рассчитать смету")
+    estimate = app.session_state[state.ESTIMATE]
+    assert estimate.tax.deduction > 0
+    assert any("уменьшен на страховые взносы" in c.value for c in app.caption)
 
 
 def test_dashboard_requires_estimate() -> None:

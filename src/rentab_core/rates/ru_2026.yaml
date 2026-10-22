@@ -1,90 +1,244 @@
-# Ставки РФ, которые использует ядро Rentab.
+# Реестр ставок РФ на 2026 год, которые использует ядро Rentab.
 #
-# Значения перенесены из Rentab v0.3
-# (legacy/rentab_v03/modules/jurisdiction.py, словарь TAX_RATES_RF_2026)
-# без проверки по первоисточникам, поэтому у каждой ставки needs_review: true
-# и source_url: null. Ставка usn.min_tax добавлена в фазе 2.
-# effective_from — год, который заявлял v0.3.
-# Проверка по НК РФ и обновление реестра — фаза 3 (docs/ROADMAP.md, L-08).
+# Фаза 3: значения сверены с первоисточниками по выдержкам их текста (полные
+# тексты из окружения разработки были недоступны). needs_review: false —
+# значение видно в тексте нормы или в разъяснении ФНС; true — источник найден
+# частично, расходится или не найден. Сводка — docs/rates_verification.md.
 #
-# value — доля, а не процент: 0.06 = 6%.
+# value в rates — доля, а не процент: 0.06 = 6%.
+# effective_from — начало периода, на который значение проверено.
 country: RF
 rates:
   usn.income:
     value: 0.06
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "УСН «Доходы». v0.3: jurisdiction.py:32"
+    source: "НК РФ, ст. 346.20, п. 1"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/3908f157150b10882cccfbb7f359866338098767/
+    needs_review: false
+    legal_review: "Закон субъекта РФ может снизить ставку до 1%: проверьте региональную ставку"
+    note: "УСН «доходы», базовая ставка"
   usn.income_minus_expenses:
     value: 0.15
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "УСН «Доходы минус расходы». v0.3: jurisdiction.py:33"
+    source: "НК РФ, ст. 346.20, п. 2"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/3908f157150b10882cccfbb7f359866338098767/
+    needs_review: false
+    legal_review: "Закон субъекта РФ может снизить ставку до 5%: проверьте региональную ставку"
+    note: "УСН «доходы минус расходы», базовая ставка"
   usn.min_tax:
     value: 0.01
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Минимальный налог УСН «Доходы минус расходы», доля доходов (п. 6 ст. 346.18 НК РФ). Добавлен в фазе 2, в v0.3 его не было (L-08); ссылку на первоисточник ставит фаза 3"
+    source: "НК РФ, ст. 346.18, п. 6"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/9d874d8c8dd9d1013df3c191849a0aab5f480ab8/
+    needs_review: false
+    note: "Минимальный налог УСН «доходы минус расходы»: 1% доходов. Добавлен в фазе 2 (L-08)"
+  usn.contributions_deduction_cap:
+    value: 0.50
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 346.21, п. 3.1"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/22c21f60902851e312e9a7ebc582ba92ecea94a6/
+    needs_review: false
+    note: "Налог УСН «доходы» уменьшается на страховые взносы за работников не более чем на 50%; ИП без работников — без предела"
   usn.vat_5:
     value: 0.05
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Пониженная ставка НДС для УСН. v0.3: jurisdiction.py:38"
+    source: "НК РФ, ст. 164, п. 8"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/35cc6698564adc4507baa31c9cfdbb4f2516d068/
+    needs_review: false
+    note: "Пониженная ставка НДС для УСН при доходе до usn.vat_5_income_limit"
   usn.vat_7:
     value: 0.07
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Пониженная ставка НДС для УСН. v0.3: jurisdiction.py:39"
+    source: "НК РФ, ст. 164, п. 8"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/35cc6698564adc4507baa31c9cfdbb4f2516d068/
+    needs_review: false
+    note: "Пониженная ставка НДС для УСН при доходе до usn.vat_7_income_limit"
   osno.profit:
     value: 0.25
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Налог на прибыль на ОСНО. v0.3: jurisdiction.py:43"
+    source: "НК РФ, ст. 284, п. 1 (ред. 176-ФЗ)"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/eb9180fc785448d58fe76ef323fb67d1832b9363/
+    needs_review: false
+    note: "Налог на прибыль: 8% в федеральный бюджет (2025–2030) и 17% в региональный"
   osno.vat:
     value: 0.22
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Основная ставка НДС на ОСНО. v0.3: jurisdiction.py:44"
+    source: "НК РФ, ст. 164, п. 3 (ред. 425-ФЗ от 28.11.2025)"
+    source_url: https://www.nalog.gov.ru/rn25/news/activities_fts/16590316/
+    needs_review: false
+    note: "Основная ставка НДС с 1 января 2026 года (до 2025 года — 20%)"
   npd.individual:
     value: 0.04
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "НПД с доходов от физлиц. v0.3: jurisdiction.py:48"
+    valid_until: 2028-12-31
+    source: "422-ФЗ, ст. 10, ч. 1, п. 1"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_311977/e08381c7bc85397c1661bdeaa62be996df822d6e/
+    needs_review: false
+    note: "НПД с доходов от физлиц; эксперимент до 31.12.2028 (ст. 1 422-ФЗ)"
   npd.legal_entity:
     value: 0.06
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "НПД с доходов от юрлиц и ИП. v0.3: jurisdiction.py:49"
+    valid_until: 2028-12-31
+    source: "422-ФЗ, ст. 10, ч. 1, п. 2"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_311977/e08381c7bc85397c1661bdeaa62be996df822d6e/
+    needs_review: false
+    note: "НПД с доходов от юрлиц и ИП; эксперимент до 31.12.2028"
   ausn.income:
     value: 0.08
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "АУСН с доходов. v0.3: jurisdiction.py:71"
+    valid_until: 2027-12-31
+    source: "17-ФЗ от 25.02.2022, ст. 11"
+    source_url: https://www.garant.ru/article/1550595/
+    needs_review: false
+    legal_review: "АУСН действует не во всех регионах: проверьте, участвует ли регион регистрации"
+    note: "АУСН «доходы»; эксперимент до 31.12.2027"
   ausn.social_contributions:
     value: 0.0
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Страховые взносы работодателя на АУСН. v0.3: jurisdiction.py:73"
+    valid_until: 2027-12-31
+    source: "17-ФЗ от 25.02.2022, ст. 18"
+    source_url: https://www.garant.ru/news/1964661/
+    needs_review: false
+    note: "Единый пониженный тариф 0% для плательщиков АУСН. Взнос на травматизм — фиксированный, за организацию (2 959 ₽ в год, постановление № 1729), на сотрудника не относится"
   social_contributions.standard:
     value: 0.30
     effective_from: 2026-01-01
-    source_url: null
+    source: "НК РФ, ст. 425, п. 3"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/a3f603ffd57b1431ed51e1693ba710093347235d/
+    needs_review: false
+    note: "Единый тариф в пределах единой предельной базы (с 2023 года)"
+  social_contributions.above_base:
+    value: 0.151
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 425, п. 3"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/a3f603ffd57b1431ed51e1693ba710093347235d/
+    needs_review: false
+    note: "Единый тариф сверх единой предельной базы"
+  social_contributions.sme:
+    value: 0.15
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 427 (ред. 425-ФЗ, 104-ФЗ); распоряжение Правительства РФ от 27.12.2025 № 4125-р"
+    source_url: https://www.nalog.gov.ru/rn77/news/activities_fts/16599875/
     needs_review: true
-    note: "Страховые взносы работодателя, плоский тариф без предельной базы. v0.3: jurisdiction.py:53"
+    legal_review: "С 2026 года тариф только для МСП из приоритетных отраслей (перечень № 4125-р) с долей таких доходов не менее 70%; входит ли деятельность в области права (ОКВЭД 69.10) — не установлено"
+    note: "Пониженный тариф МСП с выплат сверх 1,5 МРОТ в месяц. Текст ст. 427 не прочитан, значение — по разъяснению ФНС"
   social_contributions.zero:
     value: 0.0
     effective_from: 2026-01-01
-    source_url: null
     needs_review: true
-    note: "Нулевой тариф взносов (в v0.3 — «для плательщиков АУСН»). v0.3: jurisdiction.py:54"
+    legal_review: "Нулевой тариф есть только у особых категорий плательщиков: укажите основание"
+    note: "Ручной нулевой тариф из v0.3 (jurisdiction.py:54, «для плательщиков АУСН»); источника нет"
+  social_contributions.injury:
+    value: 0.002
+    effective_from: 2026-01-01
+    source: "Федеральный закон от 28.11.2025 № 434-ФЗ (страховые тарифы на 2026–2028 годы), I класс профессионального риска"
+    source_url: https://sfr.gov.ru/employers/insurance_premiums_tariffs/~8297
+    needs_review: false
+    legal_review: "Класс профессионального риска определяется по основному ОКВЭД фирмы: проверьте уведомление СФР"
+    note: "Взносы на страхование от несчастных случаев и профзаболеваний"
+amounts:
+  usn.income_limit:
+    value: 490500000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 346.13, п. 4; приказ Минэкономразвития от 06.11.2025 № 734 (дефлятор 1,090)"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_524136/b1fe8a1fab653f174f01f7f29de4b6142162af9e/
+    needs_review: false
+    note: "Доход за год, при превышении которого право на УСН утрачивается: 450 млн × 1,090"
+  usn.headcount_limit:
+    value: 130
+    unit: COUNT
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 346.12, п. 3, пп. 15"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/a1d86f7078e645869b02fde85e8c972193557dee/
+    needs_review: false
+    note: "Средняя численность работников"
+  usn.vat_exemption_threshold:
+    value: 20000000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 145, п. 1 (ред. 425-ФЗ и 228-ФЗ от 04.07.2026)"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/8f399ec989074fdad875f9a672a1b091ea9bf05c/
+    needs_review: false
+    note: "Плательщик УСН с доходом за прошлый год не выше порога освобождается от НДС автоматически. Пороги на 2028 год и далее источники излагают по-разному"
+  usn.vat_5_income_limit:
+    value: 272500000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 164, п. 8; дефлятор 1,090"
+    source_url: https://www.nalog.gov.ru/rn95/news/seminar/16611050/
+    needs_review: false
+    note: "НДС 5% — при доходе до 250 млн × 1,090"
+  usn.vat_7_income_limit:
+    value: 490500000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 164, п. 8; дефлятор 1,090"
+    source_url: https://www.nalog.gov.ru/rn95/news/seminar/16611050/
+    needs_review: false
+    note: "НДС 7% — при доходе до 450 млн × 1,090"
+  ausn.income_limit:
+    value: 60000000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "17-ФЗ от 25.02.2022, ст. 3, ч. 2"
+    source_url: https://www.garant.ru/article/1550595/
+    needs_review: false
+    note: "Доход за год"
+  ausn.headcount_limit:
+    value: 5
+    unit: COUNT
+    effective_from: 2026-01-01
+    source: "17-ФЗ от 25.02.2022, ст. 3, ч. 2"
+    source_url: https://www.garant.ru/article/1550595/
+    needs_review: false
+    note: "Средняя численность работников"
+  npd.income_limit:
+    value: 2400000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "422-ФЗ, ст. 4, ч. 2, п. 8"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_311977/30ba0412dfedfe46e8061ea063246bac59da2b69/
+    needs_review: false
+    note: "Доход за календарный год"
+  social_contributions.base_limit:
+    value: 2979000
+    unit: RUB
+    effective_from: 2026-01-01
+    source: "Постановление Правительства РФ от 31.10.2025 № 1705"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_518016/
+    needs_review: false
+    note: "Единая предельная величина базы на 2026 год, нарастающим итогом по каждому физлицу"
+  social_contributions.sme_threshold:
+    value: 1.5
+    unit: MROT
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 427 (ред. 425-ФЗ)"
+    source_url: https://www.nalog.gov.ru/rn77/news/activities_fts/16599875/
+    needs_review: true
+    note: "Пониженный тариф МСП — с части выплат сверх 1,5 МРОТ в месяц"
+indices:
+  mrot:
+    name: "МРОТ"
+    unit: RUB
+    values:
+      2026:
+        value: 27093
+        effective_from: 2026-01-01
+        source: "Федеральный закон от 28.11.2025 № 429-ФЗ"
+        source_url: http://www.kremlin.ru/acts/bank/52618
+        needs_review: false
+        note: "МРОТ в месяц с 1 января 2026 года"
+scales:
+  ndfl.resident:
+    effective_from: 2026-01-01
+    source: "НК РФ, ст. 224, п. 1"
+    source_url: https://www.consultant.ru/document/cons_doc_LAW_28165/3e4bbd6dd9fb5dd4e9394f447653506e1d6fa3a9/
+    needs_review: false
+    note: "Справочно: НДФЛ удерживается из оклада и в полную стоимость сотрудника не входит (оклад вводится до удержаний)"
+    brackets:
+      - {up_to: 2400000, rate: 0.13}
+      - {up_to: 5000000, rate: 0.15}
+      - {up_to: 20000000, rate: 0.18}
+      - {up_to: 50000000, rate: 0.20}
+      - {up_to: null, rate: 0.22}

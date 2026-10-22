@@ -35,6 +35,8 @@ NPD_RATE_KEYS: Mapping[NpdClientType, str] = {
 }
 # Минимальный налог УСН «доходы − расходы», доля доходов (п. 6 ст. 346.18 НК РФ).
 USN_MIN_TAX_KEY = "usn.min_tax"
+# Предел уменьшения налога УСН «доходы» на взносы (п. 3.1 ст. 346.21 НК РФ).
+USN_DEDUCTION_CAP_KEY = "usn.contributions_deduction_cap"
 
 
 def _rate(key: str) -> Decimal:
@@ -53,7 +55,11 @@ def terms(profile: UsnProfile | AusnProfile | OsnoProfile | NpdProfile) -> TaxTe
                 label += f" + НДС {percent(vat_rate)}%"
             if profile.tax_object == UsnObject.INCOME:
                 return TaxTerms(
-                    regime_label=label, base=TaxBase.INCOME, rate=income_rate, vat_rate=vat_rate
+                    regime_label=label,
+                    base=TaxBase.INCOME,
+                    rate=income_rate,
+                    vat_rate=vat_rate,
+                    contributions_deduction_cap=_rate(USN_DEDUCTION_CAP_KEY),
                 )
             return TaxTerms(
                 regime_label=label,

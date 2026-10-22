@@ -15,6 +15,7 @@ from rentab_core.costing import employee_cost, overhead_rate
 from rentab_core.fx import convert
 from rentab_core.models import (
     CappedPricing,
+    Country,
     DisbursementKind,
     Firm,
     FixedPricing,
@@ -35,12 +36,16 @@ from rentab_core.tax import calculate_tax, tax_terms
 
 
 def resolve_stages(
-    firm: Firm, project: Project, currency: Currency
+    firm: Firm, project: Project, currency: Currency, country: Country | None = None
 ) -> tuple[list[StageLines], list[UnresolvedAssignment]]:
     """Сопоставляет назначения этапов с командой и переводит ставки в валюту проекта.
 
     Назначение с исполнителем, которого нет в команде, пропускается (как в
     v0.3); этап без единого найденного исполнителя в расчёт не входит.
+
+    Взносы на час (для уменьшения налога УСН «доходы») переносятся только у
+    сотрудников, трудоустроенных в стране расчёта налога country; без страны
+    взносы не переносятся.
 
     Returns:
         Этапы со строками сметы и список пропущенных назначений.
@@ -62,6 +67,11 @@ def resolve_stages(
                 )
                 continue
             cost = employee_cost(employee)
+            contributions_rate = (
+                convert(cost.contributions_rate, employee.currency, currency, rates)
+                if employee.employment_country == country
+                else ZERO
+            )
             lines.append(
                 EstimateLine(
                     stage_name=stage.name,
@@ -73,6 +83,8 @@ def resolve_stages(
                         cost.contract_cost_rate, employee.currency, currency, rates
                     ),
                     hours=assignment.hours,
+                    contributions_rate=contributions_rate,
+                    tax_deductible=not employee.paid_from_profit,
                 )
             )
         if lines:
@@ -99,7 +111,7 @@ def calculate_estimate(scenario: Scenario) -> Estimate:
     terms = tax_terms(firm.jurisdiction.tax_profile(calc_country))
     rates = firm.exchange_rates
 
-    stages, unresolved = resolve_stages(firm, project, currency)
+    stages, unresolved = resolve_stages(firm, project, currency, calc_country)
     lines = tuple(line for stage in stages for line in stage.lines)
     total_hours = decimal_sum(line.hours for line in lines)
     rho = overhead_rate(firm, currency)
@@ -119,6 +131,8 @@ def calculate_estimate(scenario: Scenario) -> Estimate:
     labor = decimal_sum(line.labor_cost for line in lines)
     overheads_alloc = rho * total_hours
     total_costs = labor + overheads_alloc + own
+    contributions = decimal_sum(line.contributions for line in lines)
+    nondeductible = decimal_sum(line.nondeductible_cost for line in lines)
     shadow = shadow_value(lines)
 
     pricing = project.pricing
@@ -129,13 +143,21 @@ def calculate_estimate(scenario: Scenario) -> Estimate:
             revenue = capped_revenue(shadow, pricing.cap, project.vat_mode, terms.vat_rate)
         case FixedPricing():
             if pricing.price is None:
-                revenue = cost_plus_price(terms, total_costs, project.target_margin)
+                revenue = cost_plus_price(
+                    terms,
+                    total_costs,
+                    project.target_margin,
+                    contributions=contributions,
+                    nondeductible=nondeductible,
+                )
             else:
                 revenue = agreed_revenue(pricing.price, project.vat_mode, terms.vat_rate)
         case _:
             assert_never(pricing)
 
-    tax = calculate_tax(terms, revenue, total_costs)
+    tax = calculate_tax(
+        terms, revenue, total_costs, contributions=contributions, nondeductible=nondeductible
+    )
     nne = revenue - total_costs - tax.tax
 
     # Собственный расход привязан к этапу, только если этап вошёл в расчёт;

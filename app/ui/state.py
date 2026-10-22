@@ -13,6 +13,13 @@ from typing import TypeVar, cast
 
 import streamlit as st
 
+from rentab_core.duties import (
+    DEFAULT_QUANTITY,
+    QUANTITY_DEFAULTS,
+    ApplicantCategory,
+    Quantity,
+)
+from rentab_core.fx import RatesQuote
 from rentab_core.models import (
     DEFAULT_TARGET_MARGIN,
     CappedPricing,
@@ -21,10 +28,12 @@ from rentab_core.models import (
     Employee,
     ExchangeRates,
     Firm,
+    FirmFacts,
     FixedPricing,
     HourlyPricing,
     Jurisdiction,
     JurisdictionMode,
+    LegalForm,
     Overhead,
     PricingModel,
     Project,
@@ -55,6 +64,19 @@ AGREED_PRICE = "agreed_price"
 VAT_MODE = "vat_mode"
 CALC_COUNTRY = "calc_country_choice"
 ESTIMATE = "estimate"
+# Данные фирмы для проверки применимости режимов (FirmFacts).
+FACT_LEGAL_FORM = "fact_legal_form"
+FACT_INCOME_RF = "fact_income_rf"
+FACT_INCOME_KZ = "fact_income_kz"
+FACT_HEADCOUNT = "fact_headcount"
+FACT_AGENCY = "fact_agency_contracts"
+# Загрузка курсов: дата, последний ответ источника и ошибка.
+FX_DATE = "fx_date"
+FX_QUOTE = "fx_quote"
+FX_ERROR = "fx_error"
+# Пошлины: количества (классы, пункты формулы) и категория заявителя по стране.
+DUTY_QUANTITY_PREFIX = "duty_qty_"
+DUTY_CATEGORY_PREFIX = "duty_category_"
 
 # Модели цены в интерфейсе: у фиксированной цены два способа задания.
 PRICING_HOURLY = "hourly"
@@ -63,8 +85,9 @@ PRICING_FIXED = "fixed"
 PRICING_AGREED = "agreed"
 PRICING_KINDS = (PRICING_HOURLY, PRICING_CAPPED, PRICING_FIXED, PRICING_AGREED)
 
-# Курс «₽ за 1 ₸» по умолчанию — индикативный, как в v0.3; загрузка курсов
-# ЦБ РФ и НБРК — фаза 3. Курс доллара по умолчанию не задан: 0 — «нет курса».
+# Курс «₽ за 1 ₸» по умолчанию — индикативный, как в v0.3; точный курс
+# загружается с сайта ЦБ РФ (НБРК) кнопкой на странице «Настройка» или вводится
+# вручную. Курс доллара по умолчанию не задан: 0 — «нет курса».
 DEFAULT_RUB_PER_KZT = 0.18
 NO_RATE = 0.0
 DEFAULT_TARGET_MARGIN_PCT = int(DEFAULT_TARGET_MARGIN * PERCENT)
@@ -96,13 +119,22 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
     VAT_MODE,
     CALC_COUNTRY,
     FIRM_NAME,
+    "rf_osno_sc",
+    FACT_LEGAL_FORM,
+    FACT_INCOME_RF,
+    FACT_INCOME_KZ,
+    FACT_HEADCOUNT,
+    FACT_AGENCY,
+    FX_DATE,
 )
+# Префиксы ключей виджетов, которые создаются по стране и единице.
+PERSISTENT_WIDGET_PREFIXES: tuple[str, ...] = (DUTY_QUANTITY_PREFIX, DUTY_CATEGORY_PREFIX)
 
 
 def persist_widgets() -> None:
     """Сохраняет значения виджетов при переходе между страницами."""
-    for key in PERSISTENT_WIDGET_KEYS:
-        if key in st.session_state:
+    for key in list(st.session_state.keys()):
+        if key in PERSISTENT_WIDGET_KEYS or str(key).startswith(PERSISTENT_WIDGET_PREFIXES):
             st.session_state[key] = st.session_state[key]
 
 
@@ -191,6 +223,30 @@ def exchange_rates() -> ExchangeRates:
     )
 
 
+def fx_quote() -> RatesQuote | None:
+    """Последние загруженные курсы ЦБ РФ или НБРК."""
+    value = st.session_state.get(FX_QUOTE)
+    return value if isinstance(value, RatesQuote) else None
+
+
+def _optional_number(key: str) -> Decimal | None:
+    """Число из виджета без значения по умолчанию; None — поле пустое."""
+    value = st.session_state.get(key)
+    return None if value is None else to_decimal(float(value))
+
+
+def firm_facts() -> FirmFacts:
+    """Данные фирмы для проверки применимости налоговых режимов."""
+    headcount = st.session_state.get(FACT_HEADCOUNT)
+    return FirmFacts(
+        rf_legal_form=LegalForm(st.session_state.get(FACT_LEGAL_FORM, LegalForm.ORGANIZATION)),
+        annual_income_rf=_optional_number(FACT_INCOME_RF),
+        annual_income_kz=_optional_number(FACT_INCOME_KZ),
+        headcount=None if headcount is None else int(headcount),
+        agency_contracts=bool(st.session_state.get(FACT_AGENCY, False)),
+    )
+
+
 def firm() -> Firm:
     """Фирма из данных страницы «Настройка»."""
     return Firm(
@@ -199,6 +255,37 @@ def firm() -> Firm:
         team=tuple(team()),
         overheads=tuple(overheads()),
         exchange_rates=exchange_rates(),
+        facts=firm_facts(),
+    )
+
+
+def duty_quantity_key(country: Country, quantity: Quantity) -> str:
+    """Ключ виджета количества (классов, пунктов формулы) для пошлин страны."""
+    return f"{DUTY_QUANTITY_PREFIX}{country.value}_{quantity.value}"
+
+
+def duty_category_key(country: Country) -> str:
+    """Ключ виджета категории заявителя для пошлин страны."""
+    return f"{DUTY_CATEGORY_PREFIX}{country.value}"
+
+
+def duty_quantities(country: Country) -> dict[Quantity, int]:
+    """Количества для пошлин страны из виджетов «Проекта»."""
+    return {
+        quantity: int(
+            st.session_state.get(
+                duty_quantity_key(country, quantity),
+                QUANTITY_DEFAULTS.get(quantity, DEFAULT_QUANTITY),
+            )
+        )
+        for quantity in Quantity
+    }
+
+
+def duty_category(country: Country) -> ApplicantCategory:
+    """Категория заявителя для пошлин страны; по умолчанию — юрлицо."""
+    return ApplicantCategory(
+        st.session_state.get(duty_category_key(country), ApplicantCategory.LEGAL_ENTITY)
     )
 
 

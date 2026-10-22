@@ -1,12 +1,16 @@
-"""Страница 01: настройка фирмы (страница v0.3 на ядре, методология фазы 2).
+"""Страница 01: настройка фирмы (страница v0.3 на ядре, методология фаз 2–3).
 
-Три вкладки: юрисдикция, налоги и курсы; команда; накладные фирмы. Ставки в
-подписях берутся из реестра ядра. Себестоимость часа не вводится, а
-считается ядром: c = W / (H × u) (docs/methodology.md, раздел 3). Сохранения
-профиля на диск, как в v0.3, нет: данные живут только в сессии (L-10).
+Три вкладки: юрисдикция, налоги, применимость режима и курсы; команда;
+накладные фирмы. Ставки в подписях берутся из реестра ядра. Себестоимость
+часа не вводится, а считается ядром: c = W / (H × u) (docs/methodology.md,
+раздел 3); ставка взносов подставляется по окладу и тарифу (раздел 3.1.1).
+Сохранения профиля на диск, как в v0.3, нет: данные живут только в сессии
+(L-10).
 """
 
 from __future__ import annotations
+
+import datetime as dt
 
 import pandas as pd
 import streamlit as st
@@ -19,7 +23,8 @@ from rentab_core.costing import (
     overhead_rate,
     total_overheads_monthly,
 )
-from rentab_core.errors import CurrencyConversionError
+from rentab_core.errors import CurrencyConversionError, ExchangeRateFetchError
+from rentab_core.fx import RATE_SOURCE_LABELS, fetch_rates
 from rentab_core.models import (
     DEFAULT_CONTRACT_HOURS_PER_MONTH,
     DEFAULT_TARGET_UTILIZATION,
@@ -34,6 +39,7 @@ from rentab_core.models import (
     KzForm,
     KzOurProfile,
     KzVat,
+    LegalForm,
     MonthlyCost,
     NpdClientType,
     NpdProfile,
@@ -47,25 +53,31 @@ from rentab_core.models import (
     UsnObject,
     UsnProfile,
     UsnVat,
+    employment_country,
 )
 from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, ZERO, Currency, decimal_sum, to_decimal
-from rentab_core.tax import employer_contribution_rate
+from rentab_core.tax import ContributionBreakdown, employer_contributions
+from rentab_core.tax.eligibility import Severity, check_firm
 from ui import state
 from ui.labels import (
     COMPENSATION_LABELS,
     JURISDICTION_LABELS,
+    LEGAL_FORM_LABELS,
     RF_REGIME_LABELS,
+    SEVERITY_ICONS,
     kz_form_label,
+    money,
     npd_client_label,
+    registry_amount,
     rf_rate_pct,
     social_contributions_label,
     usn_object_label,
     vat_label,
 )
 
-# Страна трудоустройства по валюте оклада — для ставки взносов по умолчанию.
-COUNTRY_BY_CURRENCY = {Currency.RUB: Country.RF, Currency.KZT: Country.KZ}
 DEFAULT_UTILIZATION_PCT = float(DEFAULT_TARGET_UTILIZATION * PERCENT)
+# Ставка взносов в карточке сотрудника введена вручную: не пересчитывать её по окладу.
+MEMBER_RATE_MANUAL = "add_member_rate_manual"
 
 # Типовые статьи накладных («Загрузить типовой шаблон», data/firm_expenses.json v0.3).
 OVERHEAD_TEMPLATE: tuple[str, ...] = (
@@ -167,20 +179,26 @@ with tab_jur:
             st.info(
                 f"АУСН: налог {rf_rate_pct('ausn.income')}% с дохода, страховые взносы "
                 f"{rf_rate_pct('ausn.social_contributions')}%, НДС не применяется. "
-                "Доступен для компаний с доходом до 60 млн ₽/год и штатом до 5 чел.",
+                f"Доступен при доходе до {registry_amount(Country.RF, 'ausn.income_limit')} ₽ "
+                f"в год и штате до {registry_amount(Country.RF, 'ausn.headcount_limit')} чел.",
                 icon="ℹ️",
             )
             rf_profile = AusnProfile()
         elif rf_regime == "osno":
-            st.info(
-                "На ОСНО ставки фиксированные по НК РФ — редактирование не требуется.",
-                icon="ℹ️",
-            )
             col_a, col_b, col_c = st.columns(3)
             col_a.metric("НДС", f"{rf_rate_pct('osno.vat')}%")
             col_b.metric("Налог на прибыль", f"{rf_rate_pct('osno.profit')}%")
-            col_c.metric("Страховые взносы", f"{rf_rate_pct('social_contributions.standard')}%")
-            rf_profile = OsnoProfile()
+            with col_c:
+                osno_sc = (
+                    st.selectbox(
+                        "Страховые взносы",
+                        options=list(SocialContributions),
+                        format_func=social_contributions_label,
+                        key="rf_osno_sc",
+                    )
+                    or SocialContributions.STANDARD
+                )
+            rf_profile = OsnoProfile(social_contributions=osno_sc)
         else:
             npd_client = (
                 st.radio(
@@ -225,12 +243,104 @@ with tab_jur:
     jurisdiction = Jurisdiction(mode=mode, rf=rf_profile, kz=kz_profile)
     st.session_state[state.JURISDICTION] = jurisdiction
 
+    st.markdown("### ✅ Применимость режима")
+    st.caption(
+        "Лимиты дохода и штата, запреты НПД, обязательный НДС. Расчёт сметы проверка "
+        "не останавливает. Пустое поле — значение не задано, проверка по нему пропускается."
+    )
+    col_form_rf, col_head, col_agency = st.columns(3)
+    with col_form_rf:
+        if mode != JurisdictionMode.KZ:
+            st.selectbox(
+                "Форма в РФ",
+                options=list(LegalForm),
+                format_func=lambda f: LEGAL_FORM_LABELS[f],
+                key=state.FACT_LEGAL_FORM,
+            )
+    with col_head:
+        st.number_input(
+            "Средняя численность работников",
+            min_value=0,
+            step=1,
+            value=None,
+            key=state.FACT_HEADCOUNT,
+            help="По трудовым договорам. Пусто — по составу команды (у ИП без владельца).",
+        )
+    with col_agency:
+        st.checkbox(
+            "Работаем по агентским договорам",
+            key=state.FACT_AGENCY,
+            help="Например, платим пошлины за клиента как агент. Для НПД это запрещено.",
+        )
+    col_income_rf, col_income_kz = st.columns(2)
+    if mode != JurisdictionMode.KZ:
+        col_income_rf.number_input(
+            "Ожидаемый доход за год в РФ без НДС, ₽",
+            min_value=0.0,
+            step=1_000_000.0,
+            format="%.0f",
+            value=None,
+            key=state.FACT_INCOME_RF,
+        )
+    if mode != JurisdictionMode.RF:
+        col_income_kz.number_input(
+            "Ожидаемый оборот за год в РК без НДС, ₸",
+            min_value=0.0,
+            step=1_000_000.0,
+            format="%.0f",
+            value=None,
+            key=state.FACT_INCOME_KZ,
+        )
+    issues = check_firm(
+        Firm(jurisdiction=jurisdiction, team=tuple(state.team()), facts=state.firm_facts())
+    )
+    if not issues:
+        st.success("Выбранный режим применим по введённым данным.", icon="✅")
+    for issue in issues:
+        text = f"{SEVERITY_ICONS[issue.severity]} **{issue.regime_name}**: {issue.message}"
+        if issue.severity == Severity.BLOCKER:
+            st.error(text)
+        elif issue.severity == Severity.WARNING:
+            st.warning(text)
+        else:
+            st.info(text)
+
     st.markdown("### 💱 Курсы валют")
     st.caption(
         "Суммы в другой валюте (оклады, накладные, пошлины) пересчитываются в валюту "
-        "проекта по этим курсам. Курс тенге по умолчанию — индикативный из v0.3: "
-        "введите актуальный. 0 — курс не задан."
+        "проекта по этим курсам. Загрузите официальные курсы ЦБ РФ (если ЦБ недоступен — "
+        "НБРК) или введите вручную. 0 — курс не задан."
     )
+
+    def load_rates() -> None:
+        """Колбэк: курсы ЦБ РФ (НБРК) на дату в поля курсов."""
+        on = st.session_state.get(state.FX_DATE) or dt.date.today()
+        try:
+            quote = fetch_rates(on)
+        except ExchangeRateFetchError as exc:
+            st.session_state[state.FX_ERROR] = str(exc)
+            return
+        st.session_state.pop(state.FX_ERROR, None)
+        st.session_state[state.FX_QUOTE] = quote
+        st.session_state[state.RUB_PER_KZT] = float(quote.rates.rub_per_kzt or ZERO)
+        st.session_state[state.RUB_PER_USD] = float(quote.rates.rub_per_usd or ZERO)
+
+    col_date, col_load = st.columns([1, 2])
+    st.session_state.setdefault(state.FX_DATE, dt.date.today())
+    with col_date:
+        st.date_input("Дата курсов", format="DD.MM.YYYY", key=state.FX_DATE)
+    with col_load:
+        st.write("")
+        st.button("⬇️ Загрузить курсы ЦБ РФ", on_click=load_rates, key="btn_load_rates")
+    fx_error = st.session_state.get(state.FX_ERROR)
+    if fx_error:
+        st.warning(f"{fx_error}", icon="⚠️")
+    quote = state.fx_quote()
+    if quote is not None:
+        st.caption(
+            f"Загружены курсы {RATE_SOURCE_LABELS[quote.source]} на "
+            f"{quote.rate_date:%d.%m.%Y}. Поля ниже можно изменить вручную."
+        )
     col_kzt, col_usd = st.columns(2)
     with col_kzt:
         st.number_input(
@@ -270,11 +380,6 @@ with tab_team:
     jurisdiction_now = state.jurisdiction()
     home = state.home_currency(jurisdiction_now)
 
-    def contribution_pct(currency: Currency) -> float:
-        """Ставка взносов по умолчанию для страны трудоустройства, %."""
-        country = COUNTRY_BY_CURRENCY.get(currency, Country.RF)
-        return float(employer_contribution_rate(jurisdiction_now, country) * PERCENT)
-
     # Поля карточки «Добавить сотрудника». Значения задаются до виджетов, чтобы
     # колбэки могли очищать карточку (менять ключ виджета после его создания нельзя).
     member_defaults: dict[str, object] = {
@@ -283,13 +388,36 @@ with tab_team:
         "add_member_currency": home.value,
         "add_member_compensation": "salary",
         "add_member_gross_salary": 0.0,
-        "add_member_employer_rate_pct": contribution_pct(home),
+        "add_member_employer_rate_pct": 0.0,
         "add_member_monthly_cost": 0.0,
         "add_member_contract_hours": float(DEFAULT_CONTRACT_HOURS_PER_MONTH),
         "add_member_utilization_pct": DEFAULT_UTILIZATION_PCT,
+        "add_member_paid_from_profit": False,
     }
     for key, default in member_defaults.items():
         st.session_state.setdefault(key, default)
+
+    def card_contributions() -> ContributionBreakdown:
+        """Взносы работодателя за год с оклада из карточки по стране трудоустройства."""
+        currency = Currency(st.session_state["add_member_currency"])
+        gross = to_decimal(float(st.session_state["add_member_gross_salary"]))
+        return employer_contributions(gross, jurisdiction_now, employment_country(currency))
+
+    def mark_rate_manual() -> None:
+        """Колбэк: ставку взносов изменили руками — больше не пересчитывать её."""
+        st.session_state[MEMBER_RATE_MANUAL] = True
+
+    def reset_rate_manual() -> None:
+        """Колбэк: вернуть ставку взносов по расчёту."""
+        st.session_state[MEMBER_RATE_MANUAL] = False
+
+    # Ставка взносов по умолчанию — эффективная для оклада, страны и тарифа
+    # (раздел 3.1.1). Пересчитывается до создания виджета, пока её не изменили руками.
+    breakdown = card_contributions()
+    if not st.session_state.get(MEMBER_RATE_MANUAL):
+        st.session_state["add_member_employer_rate_pct"] = round(
+            float(breakdown.effective_rate * PERCENT), 2
+        )
 
     def form_compensation() -> Compensation:
         """Полная стоимость сотрудника из карточки."""
@@ -318,12 +446,8 @@ with tab_team:
             target_utilization=(
                 to_decimal(float(st.session_state["add_member_utilization_pct"])) / PERCENT
             ),
+            paid_from_profit=bool(st.session_state["add_member_paid_from_profit"]),
         )
-
-    def reset_contribution_rate() -> None:
-        """Колбэк смены валюты: ставка взносов страны трудоустройства."""
-        currency = Currency(st.session_state["add_member_currency"])
-        st.session_state["add_member_employer_rate_pct"] = contribution_pct(currency)
 
     def add_member() -> None:
         """Колбэк: добавляет сотрудника и очищает карточку."""
@@ -343,8 +467,10 @@ with tab_team:
             "add_member_billing",
             "add_member_gross_salary",
             "add_member_monthly_cost",
+            "add_member_paid_from_profit",
         ):
             st.session_state[key] = member_defaults[key]
+        st.session_state[MEMBER_RATE_MANUAL] = False
 
     st.markdown("### Добавить сотрудника")
     col_name, col_role = st.columns([2, 1])
@@ -373,7 +499,6 @@ with tab_team:
             options=[Currency.RUB.value, Currency.KZT.value],
             format_func=lambda c: f"{c} ({CURRENCY_SYMBOLS[Currency(c)]})",
             key="add_member_currency",
-            on_change=reset_contribution_rate,
             help="В режиме «Оба» — валюта страны, где работает сотрудник.",
         )
 
@@ -415,10 +540,38 @@ with tab_team:
                     min_value=0.0,
                     max_value=100.0,
                     step=0.5,
-                    format="%.1f",
+                    format="%.2f",
                     key="add_member_employer_rate_pct",
-                    help="Подставлено по стране трудоустройства; можно переопределить.",
+                    on_change=mark_rate_manual,
+                    help=(
+                        "Эффективная ставка за год: с предельной базой и тарифом страны "
+                        "трудоустройства. Можно переопределить."
+                    ),
                 )
+            sym_card = CURRENCY_SYMBOLS[Currency(st.session_state["add_member_currency"])]
+            if st.session_state.get(MEMBER_RATE_MANUAL):
+                st.caption("Ставка взносов введена вручную.")
+                st.button("↺ Ставка по расчёту", on_click=reset_rate_manual, key="btn_rate_auto")
+            elif breakdown.gross_monthly > 0:
+                parts = "; ".join(
+                    f"{item.name} {money(item.annual, sym_card)}"
+                    for item in breakdown.items
+                    if item.annual > 0
+                )
+                st.caption(
+                    f"Взносы за год ({breakdown.tariff_label}): "
+                    f"{money(breakdown.annual_total, sym_card)}"
+                    + (f" — {parts}" if parts else "")
+                    + ". Ставка — годовые взносы / годовой оклад."
+                )
+        st.checkbox(
+            "Вознаграждение выплачивается из прибыли",
+            key="add_member_paid_from_profit",
+            help=(
+                "Например, партнёр получает дивиденды, а не зарплату. В себестоимость "
+                "проекта сумма входит, но базу налога «доходы − расходы» не уменьшает."
+            ),
+        )
         col_ch, col_u = st.columns(2)
         with col_ch:
             st.number_input(
@@ -488,7 +641,8 @@ with tab_team:
             cost = employee_cost(member)
             sym = CURRENCY_SYMBOLS[member.currency]
             cells = st.columns(widths)
-            cells[0].write(f"**{member.name}**")
+            profit_mark = " · из прибыли" if member.paid_from_profit else ""
+            cells[0].write(f"**{member.name}**{profit_mark}")
             cells[1].write(ROLE_LABELS[member.role])
             cells[2].write(f"{member.billing_rate:,.0f} {sym}")
             cells[3].write(f"{cost.monthly_cost:,.0f} {sym}")
