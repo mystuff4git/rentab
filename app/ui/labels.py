@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 
 from rentab_core.analysis.dashboard import Profitability
 from rentab_core.models import (
@@ -14,14 +15,17 @@ from rentab_core.models import (
     JurisdictionMode,
     KzForm,
     KzVat,
+    LegalForm,
     NpdClientType,
     SocialContributions,
     UsnObject,
     UsnVat,
     VatMode,
 )
-from rentab_core.rates import rate
+from rentab_core.money import PERCENT, format_number, round_to
+from rentab_core.rates import amount, rate
 from rentab_core.results import StageFlag
+from rentab_core.tax.eligibility import Severity
 from rentab_core.tax.labels import percent
 
 JURISDICTION_LABELS: Mapping[JurisdictionMode, str] = {
@@ -80,6 +84,20 @@ STAGE_FLAG_BG_COLORS: Mapping[StageFlag, str] = {
     StageFlag.YELLOW: "background-color: #fef3c7",
     StageFlag.RED: "background-color: #fee2e2",
 }
+LEGAL_FORM_LABELS: Mapping[LegalForm, str] = {
+    LegalForm.ORGANIZATION: "Организация (ООО и др.)",
+    LegalForm.ENTREPRENEUR: "ИП",
+    LegalForm.INDIVIDUAL: "Физлицо без статуса ИП",
+}
+SEVERITY_ICONS: Mapping[Severity, str] = {
+    Severity.BLOCKER: "⛔",
+    Severity.WARNING: "⚠️",
+    Severity.INFO: "ℹ️",
+}
+# Пометка позиции справочника, не сверенной с первоисточником полностью.
+NEEDS_REVIEW_MARK = "⚠️"
+# Шаг округления сумм в подписях: рубль (тенге).
+LABEL_QUANTUM = Decimal(1)
 PROFITABILITY_MESSAGES: Mapping[Profitability, str] = {
     Profitability.PROFITABLE: "✅ Проект рентабелен",
     Profitability.BREAKEVEN: "⚠️ Проект в точке безубыточности",
@@ -89,6 +107,21 @@ PROFITABILITY_MESSAGES: Mapping[Profitability, str] = {
 def rf_rate_pct(key: str) -> str:
     """Ставка РФ из реестра как целый процент: «6»."""
     return percent(rate(Country.RF, key))
+
+
+def rate_pct(country: Country, key: str) -> str:
+    """Ставка из реестра как процент без лишних нулей: «15,1»."""
+    return format_number(rate(country, key) * PERCENT)
+
+
+def money(value: Decimal, symbol: str) -> str:
+    """Сумма для подписи: «1 234 567 ₽», округление до рубля (тенге)."""
+    return f"{format_number(round_to(value, LABEL_QUANTUM))} {symbol}"
+
+
+def registry_amount(country: Country, key: str) -> str:
+    """Порог из реестра числом для подписи: «60 000 000», «5»."""
+    return format_number(amount(country, key))
 
 
 def kz_rate_pct(key: str) -> str:
@@ -110,9 +143,15 @@ def vat_label(value: UsnVat | KzVat) -> str:
 
 def social_contributions_label(value: SocialContributions) -> str:
     """Тариф страховых взносов."""
+    rf = Country.RF
     if value == SocialContributions.STANDARD:
-        return f"Стандарт ({rf_rate_pct('social_contributions.standard')}%)"
-    return f"АУСН ({rf_rate_pct('social_contributions.zero')}%)"
+        return (
+            f"Общий ({rate_pct(rf, 'social_contributions.standard')}%, сверх базы "
+            f"{rate_pct(rf, 'social_contributions.above_base')}%)"
+        )
+    if value == SocialContributions.SME:
+        return f"МСП из перечня ({rate_pct(rf, 'social_contributions.sme')}% сверх 1,5 МРОТ)"
+    return "Нулевой (особые категории)"
 
 
 def npd_client_label(value: NpdClientType) -> str:

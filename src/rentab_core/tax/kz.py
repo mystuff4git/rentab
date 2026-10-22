@@ -26,7 +26,9 @@ VAT_KEYS: Mapping[KzVat, str] = {
 def terms(profile: KzOurProfile) -> TaxTerms:
     """ОУР РК: КПН (ТОО) или ИПН (ИП) с прибыли, НДС сверху.
 
-    KNOWN-BUG L-08 → фаза 3: ставки v0.3, новый НК РК 2026 не учтён.
+    Ставки — по новому НК РК 2026 (реестр `kz_2026.yaml`). ИПН ИП — 10%; ставка
+    15% с дохода сверх 230 000 МРП не моделируется, об этом предупреждает
+    `tax.eligibility`.
     """
     income_rate = rate(Country.KZ, FORM_RATE_KEYS[profile.form])
     vat_rate = rate(Country.KZ, VAT_KEYS[profile.vat]) if profile.vat != KzVat.NONE else ZERO

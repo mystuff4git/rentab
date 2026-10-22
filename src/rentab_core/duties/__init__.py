@@ -2,6 +2,8 @@
 
 from rentab_core.duties.catalog import (
     APPLICANT_CATEGORY_LABELS,
+    DEFAULT_QUANTITY,
+    QUANTITY_DEFAULTS,
     QUANTITY_LABELS,
     ApplicantCategory,
     Duty,
@@ -14,6 +16,8 @@ from rentab_core.duties.catalog import (
 
 __all__ = [
     "APPLICANT_CATEGORY_LABELS",
+    "DEFAULT_QUANTITY",
+    "QUANTITY_DEFAULTS",
     "QUANTITY_LABELS",
     "ApplicantCategory",
     "Duty",

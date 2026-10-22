@@ -192,7 +192,8 @@ def test_fetch_rates_fails_with_both_errors() -> None:
     fetcher = FakeFetcher({CBR: b"<html>", NBRK: ExchangeRateFetchError("НБРК недоступен")})
     with pytest.raises(ExchangeRateFetchError, match="введите их вручную") as error:
         fetch_rates(DAY, fetch=fetcher, clock=lambda: NOON)
-    assert "НБРК недоступен" in str(error.value)
+    assert "ЦБ РФ: ответ не разбирается как XML" in str(error.value)
+    assert str(error.value).endswith("НБРК недоступен.")
     assert isinstance(error.value, RentabError)
 
 
@@ -228,10 +229,17 @@ def test_http_get_errors(monkeypatch: pytest.MonkeyPatch) -> None:
         raise urllib.error.URLError("нет сети")
 
     monkeypatch.setattr(urllib.request, "urlopen", offline)
-    with pytest.raises(ExchangeRateFetchError, match="нет сети"):
+    with pytest.raises(ExchangeRateFetchError, match=r"сервис недоступен \(нет сети\)"):
+        http_get("https://www.cbr.ru/x")
+
+    def timeout(request: urllib.request.Request, timeout: float) -> FakeResponse:
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(urllib.request, "urlopen", timeout)
+    with pytest.raises(ExchangeRateFetchError, match="timed out"):
         http_get("https://www.cbr.ru/x")
 
     huge = b"x" * (MAX_RESPONSE_BYTES + 10)
     monkeypatch.setattr(urllib.request, "urlopen", lambda request, timeout: FakeResponse(huge))
-    with pytest.raises(ExchangeRateFetchError, match="Слишком большой"):
+    with pytest.raises(ExchangeRateFetchError, match="слишком большой"):
         http_get("https://www.cbr.ru/x")

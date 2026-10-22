@@ -122,10 +122,12 @@ def http_get(url: str) -> bytes:
     try:
         with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:
             content: bytes = response.read(MAX_RESPONSE_BYTES + 1)
-    except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise ExchangeRateFetchError(f"Не удалось загрузить {url}: {exc}") from exc
+    except urllib.error.URLError as exc:
+        raise ExchangeRateFetchError(f"сервис недоступен ({exc.reason})") from exc
+    except (TimeoutError, OSError) as exc:
+        raise ExchangeRateFetchError(f"сервис недоступен ({exc})") from exc
     if len(content) > MAX_RESPONSE_BYTES:
-        raise ExchangeRateFetchError(f"Слишком большой ответ от {url}")
+        raise ExchangeRateFetchError("слишком большой ответ сервиса")
     return content
 
 
@@ -134,7 +136,7 @@ def _xml(content: bytes, source: RateSource) -> ET.Element:
         return ET.fromstring(content)
     except ET.ParseError as exc:
         raise ExchangeRateFetchError(
-            f"Ответ {RATE_SOURCE_LABELS[source]} не разбирается как XML: {exc}"
+            f"{RATE_SOURCE_LABELS[source]}: ответ не разбирается как XML ({exc})"
         ) from exc
 
 
@@ -272,9 +274,13 @@ def fetch_rates(
         try:
             quote = parse(fetch(url.format(date=requested)), requested)
         except ExchangeRateFetchError as exc:
-            errors.append(str(exc))
+            label = RATE_SOURCE_LABELS[source]
+            message = str(exc)
+            errors.append(message if message.startswith(label) else f"{label}: {message}")
             continue
         with _cache_lock:
             _cache[key] = (quote, now)
         return quote
-    raise ExchangeRateFetchError("Курсы не загружены, введите их вручную. " + " ".join(errors))
+    raise ExchangeRateFetchError(
+        "Курсы не загружены, введите их вручную. " + ". ".join(errors) + "."
+    )
