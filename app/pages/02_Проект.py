@@ -3,7 +3,8 @@
 Страница собирает этапы с исполнителями (на этапе их может быть несколько),
 пошлины и расходы проекта, модель цены и режим НДС, а по кнопке
 «Рассчитать смету» вызывает `rentab_core.calculate_estimate`. Вся
-математика — в ядре; здесь только ввод и показ.
+математика — в ядре; здесь только ввод и показ. Проектов в сессии несколько:
+активный выбирается в боковой панели (`ui.projects`).
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from rentab_core.duties import (
     ApplicantCategory,
     Duty,
     Quantity,
-    duty_disbursements,
     load_catalog,
 )
 from rentab_core.estimate import resolve_stages
@@ -47,19 +47,18 @@ from ui.labels import (
     VAT_MODE_LABELS,
     money,
 )
+from ui.projects import render_project_switcher
 
 # Слайдер целевой маржи, % (02_Проект.py:67–70).
 TARGET_MARGIN_MIN_PCT = 0
 TARGET_MARGIN_MAX_PCT = 80
 TARGET_MARGIN_STEP_PCT = 1
-# Ручной ввод маржи допускает значения шире слайдера.
-TARGET_MARGIN_INPUT_MIN_PCT = 0
-TARGET_MARGIN_INPUT_MAX_PCT = 99
 NEW_STAGE = "➕ Новый этап"
 NO_STAGE = "Без привязки (по теневой стоимости)"
 
 state.init_defaults()
 state.persist_widgets()
+render_project_switcher()
 
 st.title("📋 Проект и смета")
 
@@ -276,21 +275,21 @@ elif kind == state.PRICING_AGREED:
 
 def _sync_margin_from_slider() -> None:
     """Колбэк слайдера: переносит значение в поле ввода."""
-    st.session_state[state.TARGET_MARGIN_PCT] = int(st.session_state["margin_slider"])
+    st.session_state[state.TARGET_MARGIN_PCT] = int(st.session_state[state.MARGIN_SLIDER])
 
 
 def _sync_margin_from_input() -> None:
     """Колбэк поля ввода: двигает слайдер, если значение в его диапазоне."""
     value = int(st.session_state[state.TARGET_MARGIN_PCT])
     if TARGET_MARGIN_MIN_PCT <= value <= TARGET_MARGIN_MAX_PCT:
-        st.session_state["margin_slider"] = value
+        st.session_state[state.MARGIN_SLIDER] = value
 
 
 st.session_state.setdefault(state.TARGET_MARGIN_PCT, state.DEFAULT_TARGET_MARGIN_PCT)
 initial_slider = int(st.session_state[state.TARGET_MARGIN_PCT])
 if not TARGET_MARGIN_MIN_PCT <= initial_slider <= TARGET_MARGIN_MAX_PCT:
     initial_slider = state.DEFAULT_TARGET_MARGIN_PCT
-st.session_state.setdefault("margin_slider", initial_slider)
+st.session_state.setdefault(state.MARGIN_SLIDER, initial_slider)
 margin_help = "Доля NNE в выручке без НДС после всех издержек и налога. " + (
     "Определяет фиксированную цену."
     if kind == state.PRICING_FIXED
@@ -303,15 +302,15 @@ with col_slider:
         min_value=TARGET_MARGIN_MIN_PCT,
         max_value=TARGET_MARGIN_MAX_PCT,
         step=TARGET_MARGIN_STEP_PCT,
-        key="margin_slider",
+        key=state.MARGIN_SLIDER,
         on_change=_sync_margin_from_slider,
         help=margin_help,
     )
 with col_input:
     st.number_input(
         "или введите",
-        min_value=TARGET_MARGIN_INPUT_MIN_PCT,
-        max_value=TARGET_MARGIN_INPUT_MAX_PCT,
+        min_value=state.TARGET_MARGIN_INPUT_MIN_PCT,
+        max_value=state.TARGET_MARGIN_INPUT_MAX_PCT,
         step=TARGET_MARGIN_STEP_PCT,
         key=state.TARGET_MARGIN_PCT,
         on_change=_sync_margin_from_input,
@@ -328,12 +327,7 @@ selected = state.selected_duties()
 
 def project_duties(country: Country) -> list[Disbursement]:
     """Пошлины страны с количествами и категорией заявителя из виджетов."""
-    return duty_disbursements(
-        country,
-        selected.get(country.value, []),
-        state.duty_quantities(country),
-        state.duty_category(country),
-    )
+    return state.duty_selection(country).disbursements(country)
 
 
 with st.expander("4. Расходы проекта — пошлины, субподряд и др. (необязательно)"):
@@ -365,7 +359,7 @@ with st.expander("4. Расходы проекта — пошлины, субп�
             options=list(duties_by_action),
             default=[a for a in selected.get(country.value, []) if a in duties_by_action],
             format_func=duty_label,
-            key=f"duties_multiselect_{country.value}",
+            key=f"{state.DUTY_MULTISELECT_PREFIX}{country.value}",
         )
         selected[country.value] = chosen
         if not chosen:
@@ -490,9 +484,8 @@ if calc_disabled:
     )
 
 if st.button("💰 Рассчитать смету", type="primary", disabled=calc_disabled):
-    duties = [item for country in jurisdiction.countries for item in project_duties(country)]
     try:
-        st.session_state[state.ESTIMATE] = calculate_estimate(state.scenario(duties))
+        st.session_state[state.ESTIMATE] = calculate_estimate(state.scenario())
     except FixedPriceError as exc:
         st.error(f"Не удалось рассчитать фиксированную цену: {exc}")
         st.stop()

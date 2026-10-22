@@ -12,7 +12,6 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from streamlit.testing.v1 import AppTest
 
 from rentab_core import calculate_estimate
 from rentab_core.duties import ApplicantCategory, Quantity
@@ -37,27 +36,9 @@ from rentab_core.models import (
     UsnVat,
 )
 from rentab_core.money import Currency
-from tests.app.conftest import APP_DIR
+from tests.app.helpers import click, metrics, run_page
 from tests.core.factories import ASSOCIATE, PARTNER, RENT, basic_scenario, d, fixed, stage
 from ui import state
-
-TIMEOUT_SECONDS = 60
-
-
-def run_page(path: str, session: dict[str, Any] | None = None) -> AppTest:
-    """Открывает страницу из точки входа с заданным состоянием сессии.
-
-    Приложение запускается с Home.py и переходит на страницу так же, как
-    пользователь из меню: иначе не работают ссылки между страницами.
-    """
-    app = AppTest.from_file(str(APP_DIR / "Home.py"), default_timeout=TIMEOUT_SECONDS)
-    for key, value in (session or {}).items():
-        app.session_state[key] = value
-    app.run()
-    if path != "Home.py":
-        app.switch_page(path).run()
-    assert not app.exception, app.exception
-    return app
 
 
 def firm_session(jurisdiction: Jurisdiction | None = None) -> dict[str, Any]:
@@ -80,17 +61,6 @@ def project_session(**extra: Any) -> dict[str, Any]:
         ],
         **extra,
     }
-
-
-def click(app: AppTest, label: str) -> None:
-    """Нажимает кнопку по подписи и перезапускает страницу."""
-    (button,) = [b for b in app.button if b.label == label]
-    button.click().run()
-    assert not app.exception, app.exception
-
-
-def metrics(app: AppTest) -> dict[str, str]:
-    return {m.label: m.value for m in app.metric}
 
 
 def test_home_page() -> None:

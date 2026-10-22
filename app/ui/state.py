@@ -1,15 +1,26 @@
 """Состояние сессии Streamlit и сборка моделей ядра из него.
 
-Данные фирмы и проекта живут только в `st.session_state` текущей сессии:
-приложение ничего не пишет на диск сервера (CLAUDE.md, L-10). Списки
-(команда, накладные, этапы, расходы) хранятся сразу моделями ядра; страницы
-только добавляют и удаляют элементы, а `scenario()` собирает вход расчёта.
+Данные фирмы и проектов живут только в `st.session_state` текущей сессии:
+приложение ничего не пишет на диск сервера (CLAUDE.md, L-10). Сохранить их
+можно только в файл JSON, который пользователь скачивает сам (`rentab_core.io`).
+
+Фирма и активный проект хранятся в ключах виджетов и в списках моделей ядра;
+страницы только добавляют и удаляют элементы. Проектов в сессии несколько:
+неактивные лежат в слотах (`ProjectSlot`) снимками тех же ключей. При
+переключении снимок активного проекта сохраняется в его слот, а значения
+выбранного раскладываются по ключам — в колбэке, до создания виджетов.
+
+Модели собираются чистыми функциями от словаря значений (`project_record`,
+`project_values`, `firm_values`): их можно проверить без Streamlit, и путь
+«запись → значения → запись» данных не теряет.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import TypeVar, cast
+from typing import Any, TypeVar, cast
 
 import streamlit as st
 
@@ -20,7 +31,10 @@ from rentab_core.duties import (
     Quantity,
 )
 from rentab_core.fx import RatesQuote
+from rentab_core.io import DutySelection, ProjectRecord, Workspace
 from rentab_core.models import (
+    DEFAULT_KZ_TAX_PROFILE,
+    DEFAULT_RF_TAX_PROFILE,
     DEFAULT_TARGET_MARGIN,
     CappedPricing,
     Country,
@@ -33,16 +47,22 @@ from rentab_core.models import (
     HourlyPricing,
     Jurisdiction,
     JurisdictionMode,
+    KzOurProfile,
     LegalForm,
+    NpdProfile,
+    OsnoProfile,
     Overhead,
     PricingModel,
     Project,
     Scenario,
     Stage,
+    UsnProfile,
     VatMode,
 )
-from rentab_core.money import PERCENT, Currency, to_decimal
+from rentab_core.money import ONE, PERCENT, Currency, format_number, round_to, to_decimal
 from rentab_core.results import Estimate
+
+Values = Mapping[str, Any]
 
 # Ключи session_state. Имена виджетов v0.3 сохранены, где это возможно.
 JURISDICTION = "jurisdiction"
@@ -59,11 +79,22 @@ SELECTED_DUTIES = "selected_duties"
 CUSTOM_EXPENSES = "custom_expenses"
 PRICING_MODEL = "pricing_model"
 TARGET_MARGIN_PCT = "target_margin"
+MARGIN_SLIDER = "margin_slider"
 CAP_AMOUNT = "cap_amount"
 AGREED_PRICE = "agreed_price"
 VAT_MODE = "vat_mode"
 CALC_COUNTRY = "calc_country_choice"
 ESTIMATE = "estimate"
+# Виджеты юрисдикции на странице «Настройка».
+JURISDICTION_CHOICE = "jurisdiction_choice"
+RF_REGIME = "rf_regime_choice"
+RF_USN_OBJECT = "rf_usn_object"
+RF_USN_VAT = "rf_usn_vat"
+RF_USN_SC = "rf_usn_sc"
+RF_OSNO_SC = "rf_osno_sc"
+RF_NPD_CLIENT = "rf_npd_client"
+KZ_FORM = "kz_form_choice"
+KZ_VAT = "kz_vat_choice"
 # Данные фирмы для проверки применимости режимов (FirmFacts).
 FACT_LEGAL_FORM = "fact_legal_form"
 FACT_INCOME_RF = "fact_income_rf"
@@ -74,9 +105,18 @@ FACT_AGENCY = "fact_agency_contracts"
 FX_DATE = "fx_date"
 FX_QUOTE = "fx_quote"
 FX_ERROR = "fx_error"
+# Редактор накладных: ключ виджета и его неизменяемая база (L-21).
+OVERHEADS_EDITOR = "overheads_editor"
+OVERHEADS_EDITOR_BASE = "overheads_editor_base"
 # Пошлины: количества (классы, пункты формулы) и категория заявителя по стране.
 DUTY_QUANTITY_PREFIX = "duty_qty_"
 DUTY_CATEGORY_PREFIX = "duty_category_"
+DUTY_MULTISELECT_PREFIX = "duties_multiselect_"
+# Проекты сессии: слоты, активный проект, счётчик номеров, переключатель.
+PROJECTS = "projects"
+ACTIVE_PROJECT = "active_project"
+NEXT_PROJECT_ID = "next_project_id"
+PROJECT_SWITCH = "project_switch"
 
 # Модели цены в интерфейсе: у фиксированной цены два способа задания.
 PRICING_HOURLY = "hourly"
@@ -91,6 +131,60 @@ PRICING_KINDS = (PRICING_HOURLY, PRICING_CAPPED, PRICING_FIXED, PRICING_AGREED)
 DEFAULT_RUB_PER_KZT = 0.18
 NO_RATE = 0.0
 DEFAULT_TARGET_MARGIN_PCT = int(DEFAULT_TARGET_MARGIN * PERCENT)
+# Поле целевой маржи на странице «Проект», целые проценты.
+TARGET_MARGIN_INPUT_MIN_PCT = 0
+TARGET_MARGIN_INPUT_MAX_PCT = 99
+COPY_SUFFIX = " (копия)"
+
+# Значения проекта: снимок этих ключей — состояние проекта в его слоте.
+PROJECT_KEYS: tuple[str, ...] = (
+    PROJECT_NAME,
+    PROJECT_CLIENT,
+    PROJECT_DESCRIPTION,
+    PRICING_MODEL,
+    TARGET_MARGIN_PCT,
+    CAP_AMOUNT,
+    AGREED_PRICE,
+    VAT_MODE,
+    CALC_COUNTRY,
+    PROJECT_STAGES,
+    SELECTED_DUTIES,
+    CUSTOM_EXPENSES,
+)
+PROJECT_PREFIXES: tuple[str, ...] = (DUTY_QUANTITY_PREFIX, DUTY_CATEGORY_PREFIX)
+# Виджеты, которые пересоздаются из значений проекта: при загрузке проекта их ключи удаляются.
+PROJECT_DERIVED_KEYS: tuple[str, ...] = (
+    MARGIN_SLIDER,
+    *(f"{DUTY_MULTISELECT_PREFIX}{country.value}" for country in Country),
+)
+# Значения фирмы: заменяются при загрузке демо-фирмы и импорте.
+FIRM_KEYS: tuple[str, ...] = (
+    JURISDICTION,
+    TEAM,
+    OVERHEADS,
+    RUB_PER_KZT,
+    RUB_PER_USD,
+    FIRM_NAME,
+    JURISDICTION_CHOICE,
+    RF_REGIME,
+    RF_USN_OBJECT,
+    RF_USN_VAT,
+    RF_USN_SC,
+    RF_OSNO_SC,
+    RF_NPD_CLIENT,
+    KZ_FORM,
+    KZ_VAT,
+    FACT_LEGAL_FORM,
+    FACT_INCOME_RF,
+    FACT_INCOME_KZ,
+    FACT_HEADCOUNT,
+    FACT_AGENCY,
+    FX_DATE,
+    FX_QUOTE,
+    FX_ERROR,
+    OVERHEADS_EDITOR,
+    OVERHEADS_EDITOR_BASE,
+)
 
 ItemT = TypeVar("ItemT")
 
@@ -98,14 +192,14 @@ ItemT = TypeVar("ItemT")
 # Streamlit удаляет ключ виджета, если на текущей странице этого виджета нет;
 # повторное присваивание ключа самому себе отменяет эту очистку.
 PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
-    "jurisdiction_choice",
-    "rf_regime_choice",
-    "rf_usn_object",
-    "rf_usn_vat",
-    "rf_usn_sc",
-    "rf_npd_client",
-    "kz_form_choice",
-    "kz_vat_choice",
+    JURISDICTION_CHOICE,
+    RF_REGIME,
+    RF_USN_OBJECT,
+    RF_USN_VAT,
+    RF_USN_SC,
+    RF_NPD_CLIENT,
+    KZ_FORM,
+    KZ_VAT,
     RUB_PER_KZT,
     RUB_PER_USD,
     PROJECT_NAME,
@@ -113,13 +207,13 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
     PROJECT_DESCRIPTION,
     PRICING_MODEL,
     TARGET_MARGIN_PCT,
-    "margin_slider",
+    MARGIN_SLIDER,
     CAP_AMOUNT,
     AGREED_PRICE,
     VAT_MODE,
     CALC_COUNTRY,
     FIRM_NAME,
-    "rf_osno_sc",
+    RF_OSNO_SC,
     FACT_LEGAL_FORM,
     FACT_INCOME_RF,
     FACT_INCOME_KZ,
@@ -129,6 +223,32 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
 )
 # Префиксы ключей виджетов, которые создаются по стране и единице.
 PERSISTENT_WIDGET_PREFIXES: tuple[str, ...] = (DUTY_QUANTITY_PREFIX, DUTY_CATEGORY_PREFIX)
+
+
+@dataclass
+class ProjectSlot:
+    """Проект сессии.
+
+    Attributes:
+        id: Номер проекта в сессии («p1», «p2»…), в файл не попадает.
+        values: Снимок значений проекта (`PROJECT_KEYS`). У активного проекта
+            устарел: его значения — в ключах виджетов.
+        estimate: Последняя рассчитанная смета (у активного — в `ESTIMATE`).
+    """
+
+    id: str
+    values: dict[str, Any]
+    estimate: Estimate | None = None
+
+
+def session() -> Values:
+    """`st.session_state` как словарь значений."""
+    return cast(Values, st.session_state)
+
+
+def _values(values: Values | None) -> Values:
+    """Переданные значения или, если их нет, значения сессии (пустой словарь — тоже значения)."""
+    return session() if values is None else values
 
 
 def persist_widgets() -> None:
@@ -147,11 +267,13 @@ def init_defaults() -> None:
     st.session_state.setdefault(PROJECT_STAGES, [])
     st.session_state.setdefault(SELECTED_DUTIES, {country.value: [] for country in Country})
     st.session_state.setdefault(CUSTOM_EXPENSES, [])
+    projects()
 
 
 def items(key: str, _item_type: type[ItemT]) -> list[ItemT]:
     """Список моделей из session_state (тот же объект: его можно менять на месте)."""
-    init_defaults()
+    if key not in st.session_state:
+        init_defaults()
     return cast(list[ItemT], st.session_state[key])
 
 
@@ -166,24 +288,25 @@ def overheads() -> list[Overhead]:
 
 
 def stages() -> list[Stage]:
-    """Этапы проекта."""
+    """Этапы активного проекта."""
     return items(PROJECT_STAGES, Stage)
 
 
 def custom_expenses() -> list[Disbursement]:
-    """Произвольные расходы проекта."""
+    """Произвольные расходы активного проекта."""
     return items(CUSTOM_EXPENSES, Disbursement)
 
 
 def selected_duties() -> dict[str, list[str]]:
-    """Выбранные пошлины по странам: {"RF": [...], "KZ": [...]}."""
-    init_defaults()
+    """Выбранные пошлины активного проекта по странам: {"RF": [...], "KZ": [...]}."""
+    if SELECTED_DUTIES not in st.session_state:
+        init_defaults()
     return cast(dict[str, list[str]], st.session_state[SELECTED_DUTIES])
 
 
-def jurisdiction() -> Jurisdiction | None:
+def jurisdiction(values: Values | None = None) -> Jurisdiction | None:
     """Юрисдикция, выбранная на странице «Настройка»; None — ещё не выбрана."""
-    value = st.session_state.get(JURISDICTION)
+    value = _values(values).get(JURISDICTION)
     return value if isinstance(value, Jurisdiction) else None
 
 
@@ -195,70 +318,132 @@ def home_currency(value: Jurisdiction | None) -> Currency:
 
 
 def estimate() -> Estimate | None:
-    """Последняя рассчитанная смета."""
+    """Последняя рассчитанная смета активного проекта."""
     return cast(Estimate | None, st.session_state.get(ESTIMATE))
 
 
-def number(key: str, default: float) -> Decimal:
-    """Число из session_state как Decimal."""
-    return to_decimal(float(st.session_state.get(key, default)))
+def number(key: str, default: float, values: Values | None = None) -> Decimal:
+    """Число из значений как Decimal."""
+    return to_decimal(float(_values(values).get(key, default)))
 
 
-def text(key: str) -> str:
-    """Строка из session_state."""
-    return str(st.session_state.get(key, ""))
+def text(key: str, values: Values | None = None) -> str:
+    """Строка из значений."""
+    return str(_values(values).get(key, ""))
 
 
-def _rate(key: str, default: float) -> Decimal | None:
-    """Курс из session_state; 0 — курс не задан."""
-    value = number(key, default)
+# ---------------------------------------------------------------------------
+# Фирма
+# ---------------------------------------------------------------------------
+def _rate(key: str, default: float, values: Values) -> Decimal | None:
+    """Курс из значений; 0 — курс не задан."""
+    value = number(key, default, values)
     return value if value > 0 else None
 
 
-def exchange_rates() -> ExchangeRates:
+def exchange_rates(values: Values | None = None) -> ExchangeRates:
     """Курсы валют фирмы со страницы «Настройка»."""
+    values = _values(values)
     return ExchangeRates(
-        rub_per_kzt=_rate(RUB_PER_KZT, DEFAULT_RUB_PER_KZT),
-        rub_per_usd=_rate(RUB_PER_USD, NO_RATE),
+        rub_per_kzt=_rate(RUB_PER_KZT, DEFAULT_RUB_PER_KZT, values),
+        rub_per_usd=_rate(RUB_PER_USD, NO_RATE, values),
     )
 
 
-def fx_quote() -> RatesQuote | None:
+def fx_quote(values: Values | None = None) -> RatesQuote | None:
     """Последние загруженные курсы ЦБ РФ или НБРК."""
-    value = st.session_state.get(FX_QUOTE)
+    value = _values(values).get(FX_QUOTE)
     return value if isinstance(value, RatesQuote) else None
 
 
-def _optional_number(key: str) -> Decimal | None:
+def _optional_number(key: str, values: Values) -> Decimal | None:
     """Число из виджета без значения по умолчанию; None — поле пустое."""
-    value = st.session_state.get(key)
+    value = values.get(key)
     return None if value is None else to_decimal(float(value))
 
 
-def firm_facts() -> FirmFacts:
+def firm_facts(values: Values | None = None) -> FirmFacts:
     """Данные фирмы для проверки применимости налоговых режимов."""
-    headcount = st.session_state.get(FACT_HEADCOUNT)
+    values = _values(values)
+    headcount = values.get(FACT_HEADCOUNT)
     return FirmFacts(
-        rf_legal_form=LegalForm(st.session_state.get(FACT_LEGAL_FORM, LegalForm.ORGANIZATION)),
-        annual_income_rf=_optional_number(FACT_INCOME_RF),
-        annual_income_kz=_optional_number(FACT_INCOME_KZ),
+        rf_legal_form=LegalForm(values.get(FACT_LEGAL_FORM, LegalForm.ORGANIZATION)),
+        annual_income_rf=_optional_number(FACT_INCOME_RF, values),
+        annual_income_kz=_optional_number(FACT_INCOME_KZ, values),
         headcount=None if headcount is None else int(headcount),
-        agency_contracts=bool(st.session_state.get(FACT_AGENCY, False)),
+        agency_contracts=bool(values.get(FACT_AGENCY, False)),
     )
 
 
-def firm() -> Firm:
+def firm(values: Values | None = None) -> Firm:
     """Фирма из данных страницы «Настройка»."""
+    values = _values(values)
     return Firm(
-        name=text(FIRM_NAME),
-        jurisdiction=jurisdiction() or Jurisdiction(),
-        team=tuple(team()),
-        overheads=tuple(overheads()),
-        exchange_rates=exchange_rates(),
-        facts=firm_facts(),
+        name=text(FIRM_NAME, values),
+        jurisdiction=jurisdiction(values) or Jurisdiction(),
+        team=tuple(values.get(TEAM, ())),
+        overheads=tuple(values.get(OVERHEADS, ())),
+        exchange_rates=exchange_rates(values),
+        facts=firm_facts(values),
     )
 
 
+def normalized_jurisdiction(value: Jurisdiction) -> Jurisdiction:
+    """Юрисдикция такой, какой её соберёт страница «Настройка»: режимы стран заданы явно."""
+    countries = value.countries
+    return Jurisdiction(
+        mode=value.mode,
+        rf=(value.rf or DEFAULT_RF_TAX_PROFILE) if Country.RF in countries else None,
+        kz=(value.kz or DEFAULT_KZ_TAX_PROFILE) if Country.KZ in countries else None,
+    )
+
+
+def _optional_float(value: Decimal | None) -> float | None:
+    return None if value is None else float(value)
+
+
+def firm_values(value: Firm, quote: RatesQuote | None = None) -> dict[str, Any]:
+    """Значения ключей «Настройки» для фирмы и загруженных курсов."""
+    jurisdiction_ = normalized_jurisdiction(value.jurisdiction)
+    facts = value.facts
+    result: dict[str, Any] = {
+        JURISDICTION: jurisdiction_,
+        JURISDICTION_CHOICE: jurisdiction_.mode,
+        TEAM: list(value.team),
+        OVERHEADS: list(value.overheads),
+        RUB_PER_KZT: _optional_float(value.exchange_rates.rub_per_kzt) or NO_RATE,
+        RUB_PER_USD: _optional_float(value.exchange_rates.rub_per_usd) or NO_RATE,
+        FIRM_NAME: value.name,
+        FACT_LEGAL_FORM: facts.rf_legal_form,
+        FACT_INCOME_RF: _optional_float(facts.annual_income_rf),
+        FACT_INCOME_KZ: _optional_float(facts.annual_income_kz),
+        FACT_HEADCOUNT: facts.headcount,
+        FACT_AGENCY: facts.agency_contracts,
+    }
+    rf = jurisdiction_.rf
+    if rf is not None:
+        result[RF_REGIME] = rf.regime
+    if isinstance(rf, UsnProfile):
+        result |= {
+            RF_USN_OBJECT: rf.tax_object,
+            RF_USN_VAT: rf.vat,
+            RF_USN_SC: rf.social_contributions,
+        }
+    elif isinstance(rf, OsnoProfile):
+        result[RF_OSNO_SC] = rf.social_contributions
+    elif isinstance(rf, NpdProfile):
+        result[RF_NPD_CLIENT] = rf.client_type
+    kz = jurisdiction_.kz
+    if isinstance(kz, KzOurProfile):
+        result |= {KZ_FORM: kz.form, KZ_VAT: kz.vat}
+    if quote is not None:
+        result |= {FX_QUOTE: quote, FX_DATE: quote.requested}
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Проект
+# ---------------------------------------------------------------------------
 def duty_quantity_key(country: Country, quantity: Quantity) -> str:
     """Ключ виджета количества (классов, пунктов формулы) для пошлин страны."""
     return f"{DUTY_QUANTITY_PREFIX}{country.value}_{quantity.value}"
@@ -269,79 +454,346 @@ def duty_category_key(country: Country) -> str:
     return f"{DUTY_CATEGORY_PREFIX}{country.value}"
 
 
-def duty_quantities(country: Country) -> dict[Quantity, int]:
+def default_quantity(quantity: Quantity) -> int:
+    """Количество по умолчанию: одна единица, позиций сверх лимита — 0."""
+    return QUANTITY_DEFAULTS.get(quantity, DEFAULT_QUANTITY)
+
+
+def duty_quantities(country: Country, values: Values | None = None) -> dict[Quantity, int]:
     """Количества для пошлин страны из виджетов «Проекта»."""
+    values = _values(values)
     return {
-        quantity: int(
-            st.session_state.get(
-                duty_quantity_key(country, quantity),
-                QUANTITY_DEFAULTS.get(quantity, DEFAULT_QUANTITY),
-            )
-        )
+        quantity: int(values.get(duty_quantity_key(country, quantity), default_quantity(quantity)))
         for quantity in Quantity
     }
 
 
-def duty_category(country: Country) -> ApplicantCategory:
+def duty_category(country: Country, values: Values | None = None) -> ApplicantCategory:
     """Категория заявителя для пошлин страны; по умолчанию — юрлицо."""
-    return ApplicantCategory(
-        st.session_state.get(duty_category_key(country), ApplicantCategory.LEGAL_ENTITY)
+    values = _values(values)
+    return ApplicantCategory(values.get(duty_category_key(country), ApplicantCategory.LEGAL_ENTITY))
+
+
+def duty_selection(country: Country, values: Values | None = None) -> DutySelection:
+    """Выбранные пошлины страны с количествами, отличными от умолчания."""
+    values = _values(values)
+    selected = cast(dict[str, list[str]], values.get(SELECTED_DUTIES, {}))
+    quantities = {
+        quantity: count
+        for quantity, count in duty_quantities(country, values).items()
+        if count != default_quantity(quantity)
+    }
+    return DutySelection(
+        actions=tuple(selected.get(country.value, ())),
+        quantities=quantities,
+        category=duty_category(country, values),
     )
 
 
-def pricing_kind() -> str:
+def pricing_kind(values: Values | None = None) -> str:
     """Выбранная модель цены: hourly, capped, fixed или agreed."""
-    value = st.session_state.get(PRICING_MODEL, PRICING_HOURLY)
+    value = _values(values).get(PRICING_MODEL, PRICING_HOURLY)
     return value if value in PRICING_KINDS else PRICING_HOURLY
 
 
-def pricing() -> PricingModel:
-    """Модель ценообразования из данных страницы «Проект»."""
-    kind = pricing_kind()
-    if kind == PRICING_CAPPED:
-        return CappedPricing(cap=number(CAP_AMOUNT, 0.0))
-    if kind == PRICING_FIXED:
-        return FixedPricing()
-    if kind == PRICING_AGREED:
-        return FixedPricing(price=number(AGREED_PRICE, 0.0))
-    return HourlyPricing()
-
-
-def target_margin() -> Decimal:
-    """Целевая маржа; в интерфейсе — целые проценты."""
-    margin_pct = int(st.session_state.get(TARGET_MARGIN_PCT, DEFAULT_TARGET_MARGIN_PCT))
-    return Decimal(margin_pct) / PERCENT
-
-
-def vat_mode() -> VatMode:
-    """Как указаны цены проекта."""
-    return VatMode(st.session_state.get(VAT_MODE, VatMode.ON_TOP.value))
-
-
-def project(duty_disbursements: list[Disbursement]) -> Project:
-    """Проект из данных страницы «Проект».
-
-    Args:
-        duty_disbursements: Пошлины из каталогов; идут перед произвольными
-            расходами, как в v0.3.
+def pricing(values: Values | None = None) -> PricingModel:
+    """Модель ценообразования из данных страницы «Проект».
 
     Raises:
         pydantic.ValidationError: Потолок или согласованная цена не заданы (0).
     """
-    calc_country = st.session_state.get(CALC_COUNTRY)
-    return Project(
-        name=text(PROJECT_NAME),
-        client=text(PROJECT_CLIENT),
-        description=text(PROJECT_DESCRIPTION),
-        pricing=pricing(),
-        target_margin=target_margin(),
-        vat_mode=vat_mode(),
-        stages=tuple(stages()),
-        disbursements=(*duty_disbursements, *custom_expenses()),
+    values = _values(values)
+    kind = pricing_kind(values)
+    if kind == PRICING_CAPPED:
+        return CappedPricing(cap=number(CAP_AMOUNT, 0.0, values))
+    if kind == PRICING_FIXED:
+        return FixedPricing()
+    if kind == PRICING_AGREED:
+        return FixedPricing(price=number(AGREED_PRICE, 0.0, values))
+    return HourlyPricing()
+
+
+def pricing_complete(values: Values) -> bool:
+    """Задан ли потолок или согласованная цена, если модель цены их требует."""
+    kind = pricing_kind(values)
+    if kind == PRICING_CAPPED:
+        return number(CAP_AMOUNT, 0.0, values) > 0
+    if kind == PRICING_AGREED:
+        return number(AGREED_PRICE, 0.0, values) > 0
+    return True
+
+
+def target_margin(values: Values | None = None) -> Decimal:
+    """Целевая маржа; в интерфейсе — целые проценты."""
+    margin_pct = int(_values(values).get(TARGET_MARGIN_PCT, DEFAULT_TARGET_MARGIN_PCT))
+    return Decimal(margin_pct) / PERCENT
+
+
+def vat_mode(values: Values | None = None) -> VatMode:
+    """Как указаны цены проекта."""
+    return VatMode(_values(values).get(VAT_MODE, VatMode.ON_TOP.value))
+
+
+def project_record(values: Values | None = None, *, strict: bool = True) -> ProjectRecord:
+    """Проект и выбранные пошлины из значений проекта.
+
+    Args:
+        values: Значения проекта; по умолчанию — активный проект сессии.
+        strict: Если потолок или согласованная цена не заданы — ошибка
+            (для расчёта); иначе проект сохраняется как почасовой (для
+            выгрузки черновика).
+
+    Raises:
+        pydantic.ValidationError: strict и потолок или цена не заданы.
+    """
+    values = _values(values)
+    calc_country = values.get(CALC_COUNTRY)
+    project = Project(
+        name=text(PROJECT_NAME, values),
+        client=text(PROJECT_CLIENT, values),
+        description=text(PROJECT_DESCRIPTION, values),
+        pricing=pricing(values) if strict or pricing_complete(values) else HourlyPricing(),
+        target_margin=target_margin(values),
+        vat_mode=vat_mode(values),
+        stages=tuple(values.get(PROJECT_STAGES, ())),
+        disbursements=tuple(values.get(CUSTOM_EXPENSES, ())),
         calc_country=None if calc_country is None else Country(calc_country),
+    )
+    duties: dict[Country, DutySelection] = {}
+    for country in Country:
+        selection = duty_selection(country, values)
+        if selection != DutySelection():
+            duties[country] = selection
+    return ProjectRecord(project=project, duties=duties)
+
+
+def margin_pct(margin: Decimal) -> int:
+    """Целевая маржа в целых процентах для поля «Проекта»."""
+    pct = int(round_to(margin * PERCENT, ONE))
+    return min(max(pct, TARGET_MARGIN_INPUT_MIN_PCT), TARGET_MARGIN_INPUT_MAX_PCT)
+
+
+def project_values(record: ProjectRecord) -> dict[str, Any]:
+    """Значения ключей «Проекта» для проекта и выбранных пошлин."""
+    project = record.project
+    result: dict[str, Any] = {
+        PROJECT_NAME: project.name,
+        PROJECT_CLIENT: project.client,
+        PROJECT_DESCRIPTION: project.description,
+        PRICING_MODEL: PRICING_HOURLY,
+        TARGET_MARGIN_PCT: margin_pct(project.target_margin),
+        VAT_MODE: project.vat_mode.value,
+        PROJECT_STAGES: list(project.stages),
+        CUSTOM_EXPENSES: list(project.disbursements),
+        SELECTED_DUTIES: {
+            country.value: list(record.duties[country].actions) if country in record.duties else []
+            for country in Country
+        },
+    }
+    if isinstance(project.pricing, CappedPricing):
+        result |= {PRICING_MODEL: PRICING_CAPPED, CAP_AMOUNT: float(project.pricing.cap)}
+    elif isinstance(project.pricing, FixedPricing) and project.pricing.price is not None:
+        result |= {PRICING_MODEL: PRICING_AGREED, AGREED_PRICE: float(project.pricing.price)}
+    elif isinstance(project.pricing, FixedPricing):
+        result[PRICING_MODEL] = PRICING_FIXED
+    if project.calc_country is not None:
+        result[CALC_COUNTRY] = project.calc_country.value
+    for country in Country:
+        selection = record.duties.get(country, DutySelection())
+        for quantity in Quantity:
+            result[duty_quantity_key(country, quantity)] = selection.quantities.get(
+                quantity, default_quantity(quantity)
+            )
+        result[duty_category_key(country)] = selection.category
+    return result
+
+
+def scenario() -> Scenario:
+    """Вход расчёта сметы активного проекта: пошлины — по странам юрисдикции.
+
+    Raises:
+        pydantic.ValidationError: Потолок или согласованная цена не заданы (0).
+    """
+    return project_record().scenario(firm())
+
+
+# ---------------------------------------------------------------------------
+# Проекты сессии
+# ---------------------------------------------------------------------------
+def _is_project_key(key: str) -> bool:
+    return key in PROJECT_KEYS or key.startswith(PROJECT_PREFIXES)
+
+
+def _copy(value: Any) -> Any:
+    """Копия значения для снимка: списки и словари списков — новые объекты."""
+    if isinstance(value, list):
+        return list(value)
+    if isinstance(value, dict):
+        return {key: _copy(item) for key, item in value.items()}
+    return value
+
+
+def snapshot(values: Values) -> dict[str, Any]:
+    """Значения проекта из values (копии изменяемых списков)."""
+    return {key: _copy(value) for key, value in values.items() if _is_project_key(str(key))}
+
+
+def _new_id() -> str:
+    number_ = int(st.session_state.get(NEXT_PROJECT_ID, 1))
+    st.session_state[NEXT_PROJECT_ID] = number_ + 1
+    return f"p{number_}"
+
+
+def projects() -> list[ProjectSlot]:
+    """Проекты сессии; в новой сессии — один проект из текущих значений."""
+    if PROJECTS not in st.session_state:
+        slot = ProjectSlot(id=_new_id(), values={})
+        st.session_state[PROJECTS] = [slot]
+        st.session_state[ACTIVE_PROJECT] = slot.id
+    return cast(list[ProjectSlot], st.session_state[PROJECTS])
+
+
+def active_id() -> str:
+    """Номер активного проекта."""
+    projects()
+    return str(st.session_state[ACTIVE_PROJECT])
+
+
+def _slot(slot_id: str) -> ProjectSlot:
+    return next(slot for slot in projects() if slot.id == slot_id)
+
+
+def slot_values(slot: ProjectSlot) -> Values:
+    """Значения проекта: у активного — из ключей виджетов."""
+    return session() if slot.id == active_id() else slot.values
+
+
+def slot_estimate(slot: ProjectSlot) -> Estimate | None:
+    """Последняя смета проекта."""
+    return estimate() if slot.id == active_id() else slot.estimate
+
+
+def slot_title(slot_id: str) -> str:
+    """Название проекта для списка: без названия — «Без названия · 2»."""
+    slots = projects()
+    index = next(i for i, slot in enumerate(slots) if slot.id == slot_id)
+    name = text(PROJECT_NAME, slot_values(slots[index])).strip()
+    return name or f"Без названия · {index + 1}"
+
+
+def _stash_active() -> None:
+    """Сохраняет значения и смету активного проекта в его слот."""
+    slot = _slot(active_id())
+    slot.values = snapshot(session())
+    slot.estimate = estimate()
+
+
+def _clear(keys_filter: Callable[[str], bool]) -> None:
+    """Удаляет из сессии ключи, отобранные фильтром."""
+    for key in list(st.session_state.keys()):
+        if keys_filter(str(key)):
+            del st.session_state[key]
+
+
+def _load(slot: ProjectSlot) -> None:
+    """Делает проект активным: его значения — в ключи виджетов."""
+    _clear(lambda key: _is_project_key(key) or key in PROJECT_DERIVED_KEYS)
+    for key, value in slot.values.items():
+        st.session_state[key] = _copy(value)
+    if slot.estimate is None:
+        st.session_state.pop(ESTIMATE, None)
+    else:
+        st.session_state[ESTIMATE] = slot.estimate
+    st.session_state[ACTIVE_PROJECT] = slot.id
+    st.session_state[PROJECT_SWITCH] = slot.id
+    init_defaults()
+
+
+def _add(values: dict[str, Any]) -> None:
+    """Колбэк-помощник: новый проект после активного, он становится активным."""
+    _stash_active()
+    slots = projects()
+    slot = ProjectSlot(id=_new_id(), values=values)
+    slots.insert(slots.index(_slot(active_id())) + 1, slot)
+    _load(slot)
+
+
+def switch_project() -> None:
+    """Колбэк переключателя: сохранить активный проект и открыть выбранный."""
+    target = str(st.session_state[PROJECT_SWITCH])
+    if target != active_id():
+        _stash_active()
+        _load(_slot(target))
+
+
+def new_project() -> None:
+    """Колбэк: пустой проект."""
+    _add(project_values(ProjectRecord()))
+
+
+def duplicate_project() -> None:
+    """Колбэк: копия активного проекта без сметы."""
+    values = snapshot(session())
+    values[PROJECT_NAME] = text(PROJECT_NAME).strip() + COPY_SUFFIX
+    _add(values)
+
+
+def delete_project() -> None:
+    """Колбэк: удалить активный проект; последний заменяется пустым."""
+    slots = projects()
+    index = slots.index(_slot(active_id()))
+    slots.pop(index)
+    if not slots:
+        slots.append(ProjectSlot(id=_new_id(), values=project_values(ProjectRecord())))
+    _load(slots[min(index, len(slots) - 1)])
+
+
+def has_user_data() -> bool:
+    """Есть ли в сессии введённые данные, которые заменит загрузка."""
+    if team() or overheads():
+        return True
+    empty = ProjectRecord()
+    return any(project_record(slot_values(slot), strict=False) != empty for slot in projects())
+
+
+def workspace() -> Workspace:
+    """Фирма, курсы и все проекты сессии (черновики цены — как почасовые)."""
+    return Workspace(
+        firm=firm(),
+        rates_quote=fx_quote(),
+        projects=tuple(project_record(slot_values(slot), strict=False) for slot in projects()),
     )
 
 
-def scenario(duty_disbursements: list[Disbursement]) -> Scenario:
-    """Вход расчёта сметы."""
-    return Scenario(firm=firm(), project=project(duty_disbursements))
+def incomplete_projects() -> list[str]:
+    """Проекты, у которых не задан потолок или согласованная цена."""
+    return [slot_title(slot.id) for slot in projects() if not pricing_complete(slot_values(slot))]
+
+
+def apply_workspace(value: Workspace) -> list[str]:
+    """Колбэк-помощник: заменяет фирму и проекты сессии загруженными.
+
+    Returns:
+        Замечания интерфейса: например, маржа округлена до целого процента.
+    """
+    notes: list[str] = []
+    _clear(lambda key: key in FIRM_KEYS or _is_project_key(key) or key in PROJECT_DERIVED_KEYS)
+    for key in (PROJECTS, ACTIVE_PROJECT, ESTIMATE):
+        st.session_state.pop(key, None)
+    for key, item in firm_values(value.firm, value.rates_quote).items():
+        st.session_state[key] = item
+    records = value.projects or (ProjectRecord(),)
+    slots: list[ProjectSlot] = []
+    for index, record in enumerate(records):
+        margin = record.project.target_margin * PERCENT
+        if margin != margin_pct(record.project.target_margin):
+            name = record.project.name.strip() or f"№ {index + 1}"
+            notes.append(
+                f"Проект «{name}»: целевая маржа {format_number(margin)}% округлена до "
+                f"{margin_pct(record.project.target_margin)}% — в интерфейсе целые проценты."
+            )
+        slots.append(ProjectSlot(id=_new_id(), values=project_values(record)))
+    st.session_state[PROJECTS] = slots
+    st.session_state[ACTIVE_PROJECT] = slots[0].id
+    _load(slots[0])
+    return notes
