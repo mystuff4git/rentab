@@ -56,7 +56,29 @@ def test_project_values_for_widgets() -> None:
     assert values[state.duty_quantity_key(Country.RF, Quantity.CLASSES)] == 3
     assert values[state.duty_quantity_key(Country.RF, Quantity.ITEMS_OVER_LIMIT)] == 0
     assert values[state.duty_category_key(Country.KZ)] == ApplicantCategory.LEGAL_ENTITY
-    assert state.CALC_COUNTRY not in values
+    assert values[state.duty_multiselect_key(Country.RF)] == list(record.duties[Country.RF].actions)
+    assert values[state.duty_multiselect_key(Country.KZ)] == []
+    # Каждый ключ виджета задан явно, даже если модель цены его не использует.
+    assert values[state.CALC_COUNTRY] is None
+    assert values[state.CAP_AMOUNT] == values[state.AGREED_PRICE] == 0.0
+    assert values[state.MARGIN_SLIDER] == 30
+
+
+def test_full_values_fill_keys_missing_from_snapshot() -> None:
+    values = {
+        state.PROJECT_NAME: "Черновик",
+        state.PRICING_MODEL: state.PRICING_CAPPED,
+        state.TARGET_MARGIN_PCT: 90,
+        state.SELECTED_DUTIES: {"RF": ["Пошлина"], "KZ": []},
+    }
+    full = state.full_values(values)
+    assert full[state.PRICING_MODEL] == state.PRICING_CAPPED
+    assert full[state.CAP_AMOUNT] == 0.0
+    # 90% шире слайдера: слайдер — на значении по умолчанию, поле — 90.
+    assert full[state.TARGET_MARGIN_PCT] == 90
+    assert full[state.MARGIN_SLIDER] == state.DEFAULT_TARGET_MARGIN_PCT
+    assert full[state.duty_multiselect_key(Country.RF)] == ["Пошлина"]
+    assert set(state.full_values({})) == set(state.project_values(ProjectRecord()))
 
 
 def test_incomplete_price_is_kept_as_hourly_draft() -> None:

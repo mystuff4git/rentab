@@ -277,3 +277,20 @@ def test_full_featured_file_survives_pages(downloads: dict[str, bytes]) -> None:
     assert app.session_state[state.ESTIMATE].currency == "KZT"
     app.switch_page("Home.py").run()
     assert loads(exported(downloads)).workspace == workspace
+
+
+def test_switching_projects_in_both_mode_resets_calc_country() -> None:
+    app = run_page("Home.py")
+    upload(app, dumps(full_featured_workspace()))
+    click(app, "📂 Загрузить данные из файла")
+    app.switch_page(PROJECT_PAGE).run()
+    assert app.radio(key=state.CALC_COUNTRY).value == "KZ"
+    switch(app, slot_ids(app)[1])
+    # Страна расчёта не задана: радиокнопка пустая, смета — в рублях.
+    assert app.radio(key=state.CALC_COUNTRY).value is None
+    app.text_input(key=state.PROJECT_NAME).input("Второй").run()
+    app.text_input(key="assignment_new_stage").input("Этап")
+    app.number_input(key="assignment_hours").set_value(2.0)
+    click(app, "➕ Добавить")
+    click(app, "💰 Рассчитать смету")
+    assert app.session_state[state.ESTIMATE].currency == "RUB"

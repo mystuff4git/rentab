@@ -49,9 +49,7 @@ from ui.labels import (
 )
 from ui.projects import render_project_switcher
 
-# Слайдер целевой маржи, % (02_Проект.py:67–70).
-TARGET_MARGIN_MIN_PCT = 0
-TARGET_MARGIN_MAX_PCT = 80
+# Шаг слайдера и поля целевой маржи, % (границы — ui.state).
 TARGET_MARGIN_STEP_PCT = 1
 NEW_STAGE = "➕ Новый этап"
 NO_STAGE = "Без привязки (по теневой стоимости)"
@@ -281,15 +279,14 @@ def _sync_margin_from_slider() -> None:
 def _sync_margin_from_input() -> None:
     """Колбэк поля ввода: двигает слайдер, если значение в его диапазоне."""
     value = int(st.session_state[state.TARGET_MARGIN_PCT])
-    if TARGET_MARGIN_MIN_PCT <= value <= TARGET_MARGIN_MAX_PCT:
+    if state.slider_pct(value) == value:
         st.session_state[state.MARGIN_SLIDER] = value
 
 
 st.session_state.setdefault(state.TARGET_MARGIN_PCT, state.DEFAULT_TARGET_MARGIN_PCT)
-initial_slider = int(st.session_state[state.TARGET_MARGIN_PCT])
-if not TARGET_MARGIN_MIN_PCT <= initial_slider <= TARGET_MARGIN_MAX_PCT:
-    initial_slider = state.DEFAULT_TARGET_MARGIN_PCT
-st.session_state.setdefault(state.MARGIN_SLIDER, initial_slider)
+st.session_state.setdefault(
+    state.MARGIN_SLIDER, state.slider_pct(int(st.session_state[state.TARGET_MARGIN_PCT]))
+)
 margin_help = "Доля NNE в выручке без НДС после всех издержек и налога. " + (
     "Определяет фиксированную цену."
     if kind == state.PRICING_FIXED
@@ -299,8 +296,8 @@ col_slider, col_input = st.columns([3, 1])
 with col_slider:
     st.slider(
         "Целевая маржа NNE (%)",
-        min_value=TARGET_MARGIN_MIN_PCT,
-        max_value=TARGET_MARGIN_MAX_PCT,
+        min_value=state.TARGET_MARGIN_SLIDER_MIN_PCT,
+        max_value=state.TARGET_MARGIN_SLIDER_MAX_PCT,
         step=TARGET_MARGIN_STEP_PCT,
         key=state.MARGIN_SLIDER,
         on_change=_sync_margin_from_slider,
@@ -354,12 +351,17 @@ with st.expander("4. Расходы проекта — пошлины, субп�
             return f"{action} — от {money(duty.amount, symbol)}{mark}"
 
         st.markdown(f"**{PATENT_OFFICE_LABELS[country]} ({sym})**")
+        # Выбор задаётся через ключ, а не default: при переключении проекта
+        # список остаётся на экране, и браузер не заменил бы его новым default.
+        multiselect_key = state.duty_multiselect_key(country)
+        st.session_state.setdefault(
+            multiselect_key, [a for a in selected.get(country.value, []) if a in duties_by_action]
+        )
         chosen = st.multiselect(
             f"Выберите пошлины ({country.value})",
             options=list(duties_by_action),
-            default=[a for a in selected.get(country.value, []) if a in duties_by_action],
             format_func=duty_label,
-            key=f"{state.DUTY_MULTISELECT_PREFIX}{country.value}",
+            key=multiselect_key,
         )
         selected[country.value] = chosen
         if not chosen:

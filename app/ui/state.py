@@ -131,18 +131,24 @@ PRICING_KINDS = (PRICING_HOURLY, PRICING_CAPPED, PRICING_FIXED, PRICING_AGREED)
 DEFAULT_RUB_PER_KZT = 0.18
 NO_RATE = 0.0
 DEFAULT_TARGET_MARGIN_PCT = int(DEFAULT_TARGET_MARGIN * PERCENT)
-# Поле целевой маржи на странице «Проект», целые проценты.
+# Поле и слайдер целевой маржи на странице «Проект», целые проценты
+# (слайдер — как в v0.3, 02_Проект.py:67–70; поле допускает значения шире).
 TARGET_MARGIN_INPUT_MIN_PCT = 0
 TARGET_MARGIN_INPUT_MAX_PCT = 99
+TARGET_MARGIN_SLIDER_MIN_PCT = 0
+TARGET_MARGIN_SLIDER_MAX_PCT = 80
 COPY_SUFFIX = " (копия)"
 
 # Значения проекта: снимок этих ключей — состояние проекта в его слоте.
+# При загрузке проекта каждый ключ задаётся явно: браузер хранит значение
+# виджета, который остаётся на экране, и не заменяет его новым `default`.
 PROJECT_KEYS: tuple[str, ...] = (
     PROJECT_NAME,
     PROJECT_CLIENT,
     PROJECT_DESCRIPTION,
     PRICING_MODEL,
     TARGET_MARGIN_PCT,
+    MARGIN_SLIDER,
     CAP_AMOUNT,
     AGREED_PRICE,
     VAT_MODE,
@@ -151,11 +157,10 @@ PROJECT_KEYS: tuple[str, ...] = (
     SELECTED_DUTIES,
     CUSTOM_EXPENSES,
 )
-PROJECT_PREFIXES: tuple[str, ...] = (DUTY_QUANTITY_PREFIX, DUTY_CATEGORY_PREFIX)
-# Виджеты, которые пересоздаются из значений проекта: при загрузке проекта их ключи удаляются.
-PROJECT_DERIVED_KEYS: tuple[str, ...] = (
-    MARGIN_SLIDER,
-    *(f"{DUTY_MULTISELECT_PREFIX}{country.value}" for country in Country),
+PROJECT_PREFIXES: tuple[str, ...] = (
+    DUTY_QUANTITY_PREFIX,
+    DUTY_CATEGORY_PREFIX,
+    DUTY_MULTISELECT_PREFIX,
 )
 # Значения фирмы: заменяются при загрузке демо-фирмы и импорте.
 FIRM_KEYS: tuple[str, ...] = (
@@ -567,6 +572,18 @@ def project_record(values: Values | None = None, *, strict: bool = True) -> Proj
     return ProjectRecord(project=project, duties=duties)
 
 
+def slider_pct(pct: int) -> int:
+    """Положение слайдера маржи: значение поля или, если оно шире слайдера, по умолчанию."""
+    if TARGET_MARGIN_SLIDER_MIN_PCT <= pct <= TARGET_MARGIN_SLIDER_MAX_PCT:
+        return pct
+    return DEFAULT_TARGET_MARGIN_PCT
+
+
+def duty_multiselect_key(country: Country) -> str:
+    """Ключ списка выбранных пошлин страны на странице «Проект»."""
+    return f"{DUTY_MULTISELECT_PREFIX}{country.value}"
+
+
 def margin_pct(margin: Decimal) -> int:
     """Целевая маржа в целых процентах для поля «Проекта»."""
     pct = int(round_to(margin * PERCENT, ONE))
@@ -576,13 +593,18 @@ def margin_pct(margin: Decimal) -> int:
 def project_values(record: ProjectRecord) -> dict[str, Any]:
     """Значения ключей «Проекта» для проекта и выбранных пошлин."""
     project = record.project
+    pct = margin_pct(project.target_margin)
     result: dict[str, Any] = {
         PROJECT_NAME: project.name,
         PROJECT_CLIENT: project.client,
         PROJECT_DESCRIPTION: project.description,
         PRICING_MODEL: PRICING_HOURLY,
-        TARGET_MARGIN_PCT: margin_pct(project.target_margin),
+        CAP_AMOUNT: 0.0,
+        AGREED_PRICE: 0.0,
+        TARGET_MARGIN_PCT: pct,
+        MARGIN_SLIDER: slider_pct(pct),
         VAT_MODE: project.vat_mode.value,
+        CALC_COUNTRY: None if project.calc_country is None else project.calc_country.value,
         PROJECT_STAGES: list(project.stages),
         CUSTOM_EXPENSES: list(project.disbursements),
         SELECTED_DUTIES: {
@@ -596,10 +618,9 @@ def project_values(record: ProjectRecord) -> dict[str, Any]:
         result |= {PRICING_MODEL: PRICING_AGREED, AGREED_PRICE: float(project.pricing.price)}
     elif isinstance(project.pricing, FixedPricing):
         result[PRICING_MODEL] = PRICING_FIXED
-    if project.calc_country is not None:
-        result[CALC_COUNTRY] = project.calc_country.value
     for country in Country:
         selection = record.duties.get(country, DutySelection())
+        result[duty_multiselect_key(country)] = list(selection.actions)
         for quantity in Quantity:
             result[duty_quantity_key(country, quantity)] = selection.quantities.get(
                 quantity, default_quantity(quantity)
@@ -695,11 +716,20 @@ def _clear(keys_filter: Callable[[str], bool]) -> None:
             del st.session_state[key]
 
 
+def full_values(values: Values) -> dict[str, Any]:
+    """Значения всех ключей проекта: снимок поверх значений его записи.
+
+    В снимке нет ключей виджетов, которые проект ещё не показывал (например,
+    потолка); их значения берутся из записи проекта.
+    """
+    return {**project_values(project_record(values, strict=False)), **snapshot(values)}
+
+
 def _load(slot: ProjectSlot) -> None:
-    """Делает проект активным: его значения — в ключи виджетов."""
-    _clear(lambda key: _is_project_key(key) or key in PROJECT_DERIVED_KEYS)
-    for key, value in slot.values.items():
-        st.session_state[key] = _copy(value)
+    """Делает проект активным: его значения — в ключи виджетов, каждое явно."""
+    _clear(_is_project_key)
+    for key, value in full_values(slot.values).items():
+        st.session_state[key] = value
     if slot.estimate is None:
         st.session_state.pop(ESTIMATE, None)
     else:
@@ -777,7 +807,7 @@ def apply_workspace(value: Workspace) -> list[str]:
         Замечания интерфейса: например, маржа округлена до целого процента.
     """
     notes: list[str] = []
-    _clear(lambda key: key in FIRM_KEYS or _is_project_key(key) or key in PROJECT_DERIVED_KEYS)
+    _clear(lambda key: key in FIRM_KEYS or _is_project_key(key))
     for key in (PROJECTS, ACTIVE_PROJECT, ESTIMATE):
         st.session_state.pop(key, None)
     for key, item in firm_values(value.firm, value.rates_quote).items():
