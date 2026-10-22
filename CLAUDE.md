@@ -14,8 +14,10 @@ Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl, pyth
 - `app/` — Streamlit; только вызывает ядро и рисует. Модели ядра собираются из
   `st.session_state` в `app/ui/state.py`, русские подписи — в `app/ui/labels.py`.
   Точка входа — `app/Home.py`; страницы импортируют `ui.*` (Streamlit кладёт `app/` в sys.path).
-- `src/rentab_core/rates/*.yaml` — ЕДИНСТВЕННОЕ место ставок; у каждой: value, effective_from,
-  source_url, needs_review.
+- `src/rentab_core/rates/*.yaml` — ЕДИНСТВЕННОЕ место ставок, порогов (в RUB/KZT/МРП/МЗП/МРОТ),
+  показателей по годам и шкал; у каждой записи: value, effective_from, source, source_url,
+  needs_review, legal_review. `needs_review: false` без источника схема не пропустит.
+  `docs/rates_verification.md` генерируется из реестров и каталогов пошлин.
 - `docs/methodology.md` — источник истины по формулам. Код и тесты соответствуют ему; при
   изменении формулы сначала правится документ.
 - `docs/ROADMAP.md` — прогресс по фазам. Обновлять в конце каждой сессии.
@@ -53,6 +55,7 @@ uv run pytest                    # все тесты + покрытие ядра
 uv run pytest --no-cov -k slide3 # быстрый прогон части тестов
 uv run pytest --update-snapshots # перезаписать снимки и мост «было/стало» — только осознанно
 uv run python -m tests.characterization.bridge  # перегенерировать docs/phase2_before_after.md
+uv run python -m rentab_core.rates.verification docs/rates_verification.md  # после правки YAML
 uv run streamlit run app/Home.py # приложение (конфиг — .streamlit/config.toml в корне)
 ```
 
