@@ -17,6 +17,7 @@ from hypothesis import strategies as st
 from rentab_core.demo import TM_APPLICATION, TM_EXAMINATION, demo_workspace
 from rentab_core.duties import ApplicantCategory, Quantity, load_catalog
 from rentab_core.errors import ProfileImportError
+from rentab_core.estimate import calculate_estimate
 from rentab_core.fx import RateSource, RatesQuote
 from rentab_core.io import (
     FORMAT_ID,
@@ -65,7 +66,7 @@ from rentab_core.models import (
     UsnVat,
     VatMode,
 )
-from rentab_core.money import Currency
+from rentab_core.money import Currency, round_to
 from tests.core.factories import d
 
 SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "profile.schema.json"
@@ -549,3 +550,33 @@ def test_schema_main_writes_file_or_stdout(
     assert target.read_text(encoding="utf-8") == json_schema_text()
     main([])
     assert capsys.readouterr().out == json_schema_text()
+
+
+# ---------------------------------------------------------------------------
+# Совместимость: файл, выгруженный приложением фазы 4
+# ---------------------------------------------------------------------------
+# Выгрузка демо-фирмы кодом фазы 4 (main@64ab11e), до появления факта (фаза 5).
+PHASE4_FIXTURE = Path(__file__).parents[1] / "fixtures" / "profile" / "phase4_demo.json"
+# NNE смет демо-фирмы фазы 4: слайд 3 (план, факт), товарный знак, изобретение, потолок.
+PHASE4_NNE = (d(225_500), d(-2_200), d(58_800), d(49_125), d(32_200))
+
+
+def test_phase4_file_loads_unchanged() -> None:
+    data = PHASE4_FIXTURE.read_bytes()
+    result = loads(data)
+    assert result.notes == ()
+    assert result.source_version == 1
+    workspace = result.workspace
+    assert [record.project.name for record in workspace.projects] == [
+        "Слайд 3: план",
+        "Слайд 3: факт — партнёр тянет проект",
+        "Регистрация товарного знака",
+        "Патентование изобретения",
+        "Ответ на уведомление экспертизы",
+    ]
+    nne = tuple(
+        calculate_estimate(record.scenario(workspace.firm)).nne for record in workspace.projects
+    )
+    assert tuple(round_to(value) for value in nne) == PHASE4_NNE
+    # Повторная выгрузка совпадает с файлом фазы 4: новые поля без значения не пишутся.
+    assert dumps(workspace, exported_at=EXPORTED_AT) == data

@@ -1,0 +1,334 @@
+{
+  "format": "rentab",
+  "schema_version": 1,
+  "exported_at": "2026-10-22T15:00:00Z",
+  "app_version": "1.0.0.dev0",
+  "firm": {
+    "name": "Демо-фирма «Слайд 3»",
+    "jurisdiction": {
+      "mode": "RF",
+      "rf": {
+        "regime": "usn",
+        "tax_object": "income",
+        "vat": "5%",
+        "social_contributions": "standard"
+      },
+      "kz": null
+    },
+    "team": [
+      {
+        "name": "Партнёр",
+        "role": "partner",
+        "compensation": {
+          "kind": "monthly",
+          "amount": "400000"
+        },
+        "currency": "RUB",
+        "billing_rate": "10000",
+        "contract_hours_per_month": "160",
+        "target_utilization": "0.625",
+        "paid_from_profit": false
+      },
+      {
+        "name": "Юрист",
+        "role": "associate",
+        "compensation": {
+          "kind": "monthly",
+          "amount": "150000"
+        },
+        "currency": "RUB",
+        "billing_rate": "5000",
+        "contract_hours_per_month": "160",
+        "target_utilization": "0.625",
+        "paid_from_profit": false
+      },
+      {
+        "name": "Стажёр",
+        "role": "intern",
+        "compensation": {
+          "kind": "monthly",
+          "amount": "50000"
+        },
+        "currency": "RUB",
+        "billing_rate": "2000",
+        "contract_hours_per_month": "160",
+        "target_utilization": "0.625",
+        "paid_from_profit": false
+      }
+    ],
+    "overheads": [
+      {
+        "name": "Аренда офиса",
+        "amount": "18000",
+        "currency": "RUB",
+        "period": "monthly"
+      },
+      {
+        "name": "Правовые базы и ПО",
+        "amount": "7000",
+        "currency": "RUB",
+        "period": "monthly"
+      },
+      {
+        "name": "Бухгалтерия на аутсорсе",
+        "amount": "5000",
+        "currency": "RUB",
+        "period": "monthly"
+      }
+    ],
+    "exchange_rates": {
+      "rub_per_kzt": null,
+      "rub_per_usd": null
+    },
+    "facts": {
+      "rf_legal_form": "organization",
+      "annual_income_rf": "24000000",
+      "annual_income_kz": null,
+      "headcount": null,
+      "agency_contracts": false
+    }
+  },
+  "rates_quote": null,
+  "projects": [
+    {
+      "project": {
+        "name": "Слайд 3: план",
+        "client": "Клиент слайда 3",
+        "description": "Golden-сценарий защиты ВКР: план по часам.",
+        "pricing": {
+          "kind": "fixed",
+          "price": "300000"
+        },
+        "target_margin": "0.30",
+        "vat_mode": "on_top",
+        "stages": [
+          {
+            "name": "Проект",
+            "assignments": [
+              {
+                "employee": "Партнёр",
+                "hours": "5"
+              },
+              {
+                "employee": "Юрист",
+                "hours": "15"
+              },
+              {
+                "employee": "Стажёр",
+                "hours": "20"
+              }
+            ]
+          }
+        ],
+        "disbursements": [],
+        "calc_country": null
+      },
+      "duties": {}
+    },
+    {
+      "project": {
+        "name": "Слайд 3: факт — партнёр тянет проект",
+        "client": "Клиент слайда 3",
+        "description": "Тот же проект по факту: партнёр сделал работу юриста и стажёра.",
+        "pricing": {
+          "kind": "fixed",
+          "price": "300000"
+        },
+        "target_margin": "0.30",
+        "vat_mode": "on_top",
+        "stages": [
+          {
+            "name": "Проект",
+            "assignments": [
+              {
+                "employee": "Партнёр",
+                "hours": "62"
+              },
+              {
+                "employee": "Юрист",
+                "hours": "15"
+              },
+              {
+                "employee": "Стажёр",
+                "hours": "10"
+              }
+            ]
+          }
+        ],
+        "disbursements": [],
+        "calc_country": null
+      },
+      "duties": {}
+    },
+    {
+      "project": {
+        "name": "Регистрация товарного знака",
+        "client": "ООО «Ромашка»",
+        "description": "Пример 1 из методологии: классы МКТУ 05, 29, 30.",
+        "pricing": {
+          "kind": "hourly"
+        },
+        "target_margin": "0.30",
+        "vat_mode": "on_top",
+        "stages": [
+          {
+            "name": "Анализ охраноспособности",
+            "assignments": [
+              {
+                "employee": "Партнёр",
+                "hours": "2"
+              },
+              {
+                "employee": "Юрист",
+                "hours": "8"
+              }
+            ]
+          },
+          {
+            "name": "Подготовка и подача заявки",
+            "assignments": [
+              {
+                "employee": "Юрист",
+                "hours": "4"
+              },
+              {
+                "employee": "Стажёр",
+                "hours": "10"
+              }
+            ]
+          }
+        ],
+        "disbursements": [
+          {
+            "name": "Нотариальный перевод доверенности",
+            "kind": "own",
+            "amount": "1800",
+            "currency": "RUB",
+            "stage": "Подготовка и подача заявки"
+          }
+        ],
+        "calc_country": null
+      },
+      "duties": {
+        "RF": {
+          "actions": [
+            "Регистрация заявки на товарный знак и формальная экспертиза",
+            "Экспертиза заявленного обозначения (товарный знак)"
+          ],
+          "quantities": {
+            "classes": 3
+          },
+          "category": "legal_entity",
+          "amounts_at_export": {
+            "Регистрация заявки на товарный знак и формальная экспертиза": "6000",
+            "Экспертиза заявленного обозначения (товарный знак)": "18000"
+          }
+        }
+      }
+    },
+    {
+      "project": {
+        "name": "Патентование изобретения",
+        "client": "АО «Технологии»",
+        "description": "Заявка на изобретение: поиск, подготовка, ответ на запрос экспертизы.",
+        "pricing": {
+          "kind": "fixed",
+          "price": null
+        },
+        "target_margin": "0.30",
+        "vat_mode": "on_top",
+        "stages": [
+          {
+            "name": "Патентный поиск",
+            "assignments": [
+              {
+                "employee": "Юрист",
+                "hours": "12"
+              },
+              {
+                "employee": "Стажёр",
+                "hours": "8"
+              }
+            ]
+          },
+          {
+            "name": "Подготовка заявки",
+            "assignments": [
+              {
+                "employee": "Партнёр",
+                "hours": "6"
+              },
+              {
+                "employee": "Юрист",
+                "hours": "24"
+              }
+            ]
+          },
+          {
+            "name": "Ответ на запрос экспертизы",
+            "assignments": [
+              {
+                "employee": "Партнёр",
+                "hours": "2"
+              },
+              {
+                "employee": "Юрист",
+                "hours": "6"
+              }
+            ]
+          }
+        ],
+        "disbursements": [],
+        "calc_country": null
+      },
+      "duties": {
+        "RF": {
+          "actions": [
+            "Регистрация заявки на изобретение и формальная экспертиза",
+            "Экспертиза заявки на изобретение по существу"
+          ],
+          "quantities": {
+            "claims": 15,
+            "independent_claims": 2
+          },
+          "category": "legal_entity",
+          "amounts_at_export": {
+            "Регистрация заявки на изобретение и формальная экспертиза": "9000",
+            "Экспертиза заявки на изобретение по существу": "24000"
+          }
+        }
+      }
+    },
+    {
+      "project": {
+        "name": "Ответ на уведомление экспертизы",
+        "client": "ИП Смирнов",
+        "description": "Потолок согласован с клиентом; часы сверх потолка — списание.",
+        "pricing": {
+          "kind": "capped",
+          "cap": "60000"
+        },
+        "target_margin": "0.30",
+        "vat_mode": "on_top",
+        "stages": [
+          {
+            "name": "Анализ уведомления и ответ",
+            "assignments": [
+              {
+                "employee": "Партнёр",
+                "hours": "2"
+              },
+              {
+                "employee": "Юрист",
+                "hours": "10"
+              }
+            ]
+          }
+        ],
+        "disbursements": [],
+        "calc_country": null
+      },
+      "duties": {}
+    }
+  ]
+}
