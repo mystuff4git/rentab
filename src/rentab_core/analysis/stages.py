@@ -4,7 +4,8 @@
     R_s   = R × V_s / Σ V                      выручка — по теневой стоимости (L-04)
     C_s   = Labor_s + ρ × H_s + Own_s          собственные расходы — привязанные к этапу
                                                и доля нераспределённых по тому же ключу
-    Tax_s — та же логика, что у налога проекта; Σ Tax_s = Tax
+    Tax_s — та же логика, что у налога проекта (с взносами S_s и
+            вознаграждением из прибыли N_s этапа); Σ Tax_s = Tax
     m_s   = (R_s − C_s − Tax_s) / R_s          маржа после налога
 
 Если ставки для клиента не заданы ни у кого (Σ V = 0), ключ — трудозатраты,
@@ -50,6 +51,16 @@ class StageLines(CoreModel):
         """Теневая стоимость этапа V_s."""
         return decimal_sum(line.shadow_value for line in self.lines)
 
+    @property
+    def contributions(self) -> Decimal:
+        """Взносы на часах этапа S_s."""
+        return decimal_sum(line.contributions for line in self.lines)
+
+    @property
+    def nondeductible_cost(self) -> Decimal:
+        """Вознаграждение из прибыли на часах этапа N_s."""
+        return decimal_sum(line.nondeductible_cost for line in self.lines)
+
 
 def classify(margin: Decimal, target_margin: Decimal) -> StageFlag:
     """Цвет этапа: red — маржа ≤ 0, green — маржа ≥ цели, иначе yellow.
@@ -82,15 +93,16 @@ def allocation_shares(stages: Sequence[StageLines]) -> list[Decimal]:
     return [ZERO for _ in stages]
 
 
-def _stage_tax(tax: TaxResult, revenue: Decimal, costs: Decimal) -> Decimal:
+def _stage_tax(tax: TaxResult, stage: StageLines, revenue: Decimal, costs: Decimal) -> Decimal:
     """Доля налога проекта, приходящаяся на этап."""
     terms = tax.terms
-    if terms.base == TaxBase.INCOME:
-        return terms.rate * revenue
+    if terms.base == TaxBase.INCOME and not tax.deduction_capped:
+        contributions = stage.contributions if tax.contributions > 0 else ZERO
+        return terms.rate * revenue - contributions
     if tax.profit_tax_applied:
         # Убыточный этап получает отрицательный налог: он уменьшает налог проекта.
-        return terms.rate * (revenue - costs)
-    # Минимальный налог (или нулевой налог) — пропорционально выручке.
+        return terms.rate * (revenue - costs + stage.nondeductible_cost)
+    # Предел уменьшения на взносы, минимальный или нулевой налог — пропорционально выручке.
     return tax.tax * revenue / tax.revenue if tax.revenue > 0 else ZERO
 
 
@@ -125,7 +137,7 @@ def stage_results(
         overheads = overhead_rate * stage.hours
         own = own_by_stage.get(stage.name, ZERO) + unassigned_own * share
         costs = stage.labor_cost + overheads + own
-        stage_tax = _stage_tax(tax, stage_revenue, costs)
+        stage_tax = _stage_tax(tax, stage, stage_revenue, costs)
         nne = stage_revenue - costs - stage_tax
         margin = nne / stage_revenue if stage_revenue > 0 else ZERO
         results.append(

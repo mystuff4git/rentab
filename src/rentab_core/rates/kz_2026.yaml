@@ -1,48 +1,210 @@
-# Ставки РК, которые использует ядро Rentab.
+# Реестр ставок РК на 2026 год, которые использует ядро Rentab.
 #
-# Все значения перенесены из Rentab v0.3
-# (legacy/rentab_v03/modules/jurisdiction.py, словарь TAX_RATES_KZ_2026)
-# без проверки по первоисточникам, поэтому у каждой ставки needs_review: true
-# и source_url: null. effective_from — год, который заявлял v0.3.
-# С 2026 года в РК действует новый Налоговый кодекс; проверка и обновление
-# реестра — фаза 3 (docs/ROADMAP.md, L-08).
+# С 1 января 2026 года действует новый Налоговый кодекс РК (Кодекс от 18 июля
+# 2025 года № 214-VIII). Фаза 3: значения сверены с первоисточниками по
+# выдержкам их текста и разъяснениям КГД, ЕНПФ, ГФСС и ФСМС (полные тексты из
+# окружения разработки были недоступны). needs_review: true — источник найден
+# частично или расходится. Сводка — docs/rates_verification.md.
 #
-# value — доля, а не процент: 0.20 = 20%.
+# value в rates — доля: 0.20 = 20%. Суммы в amounts заданы в МРП или МЗП и
+# переводятся в тенге по показателю года (indices).
 country: KZ
 rates:
   our.cit_too:
     value: 0.20
     effective_from: 2026-01-01
-    source_url: null
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII), ставка КПН"
+    source_url: https://www.gov.kz/uploads/2025/9/17/f2e7461f559e6c02ad52a135d89c7d3c_original.647617.pdf
     needs_review: true
-    note: "КПН для ТОО на ОУР. v0.3: jurisdiction.py:84"
+    note: "КПН для ТОО на ОУР. 20% подтверждают материалы Правительства РК к новому кодексу; статья кодекса не прочитана"
   our.iit_ip:
     value: 0.10
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "ИПН для ИП на ОУР с чистой прибыли. v0.3: jurisdiction.py:85"
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII), шкала ИПН для ИП на общеустановленном режиме"
+    source_url: https://adilet.zan.kz/rus/docs/K2500000214
+    needs_review: false
+    note: "ИПН ИП на ОУР с облагаемого дохода до our.iit_ip_threshold"
+  our.iit_ip_high:
+    value: 0.15
+    effective_from: 2026-01-01
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII), шкала ИПН для ИП на общеустановленном режиме"
+    source_url: https://adilet.zan.kz/rus/docs/K2500000214
+    needs_review: false
+    note: "ИПН ИП на ОУР с дохода сверх our.iit_ip_threshold. Ядро считает 10%, валидатор предупреждает"
   vat_16:
     value: 0.16
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "НДС. v0.3: jurisdiction.py:88"
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII); разъяснение Минфина РК"
+    source_url: https://www.gov.kz/org/minfin/press/news/details/1119650?lang=ru
+    needs_review: false
+    note: "Общеустановленная ставка НДС с 1 января 2026 года (до 2025 года — 12%)"
   payroll.employer.oosms:
     value: 0.03
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Отчисления работодателя на ОСМС (ООСМС). v0.3: jurisdiction.py:98"
+    source: "Закон РК «Об обязательном социальном медицинском страховании»; разъяснение ФСМС"
+    source_url: https://fms.kz/ru/useful-to-know/kak-platit-vznosi-i-otchislenia/
+    needs_review: false
+    note: "Отчисления работодателя на ОСМС (ООСМС)"
   payroll.employer.so:
     value: 0.05
     effective_from: 2026-01-01
-    source_url: null
-    needs_review: true
-    note: "Социальные отчисления (СО). Социальный налог ТОО в v0.3 не учтён. v0.3: jurisdiction.py:99"
+    source: "Социальный кодекс РК, глава 18"
+    source_url: https://adilet.zan.kz/rus/docs/K2300000224
+    needs_review: false
+    note: "Социальные отчисления (СО): 3,5% до 2024 года, 5% с 1 января 2025 года"
   payroll.employer.opvr:
     value: 0.035
     effective_from: 2026-01-01
-    source_url: null
+    source: "Социальный кодекс РК; разъяснение ЕНПФ"
+    source_url: https://www.enpf.kz/ru/services/pension/ups/330/281181/
+    needs_review: false
+    note: "ОПВР: 3,5% в 2026 году, 4,5% в 2027, 5% с 2028. Платится за работников 1975 года рождения и младше"
+  payroll.employee.opv:
+    value: 0.10
+    effective_from: 2026-01-01
+    source: "Социальный кодекс РК; разъяснение ЕНПФ"
+    source_url: https://www.enpf.kz/ru/services/pension/ups/330/281179/
+    needs_review: false
+    note: "ОПВ работника, удерживается из дохода; уменьшает базу СО и соцналога"
+  payroll.employee.vosms:
+    value: 0.02
+    effective_from: 2026-01-01
+    source: "Закон РК «Об обязательном социальном медицинском страховании»; разъяснение ФСМС"
+    source_url: https://fms.kz/ru/useful-to-know/kak-platit-vznosi-i-otchislenia/
+    needs_review: false
+    note: "ВОСМС работника, удерживается из дохода; уменьшает базу соцналога"
+  social_tax:
+    value: 0.06
+    effective_from: 2026-01-01
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII); разъяснение КГД"
+    source_url: https://kst.kgd.gov.kz/ru/news/socialnyy-nalog-izmeneniya-po-ischisleniyu-s-2026-goda-12-162396
+    needs_review: false
+    legal_review: "База соцналога (доходы работников за вычетом ОПВ и ВОСМС) взята из разъяснений КГД"
+    note: "Социальный налог ТОО на ОУР: 6% с 2026 года, не уменьшается на СО. В v0.3 не учитывался (L-08)"
+amounts:
+  vat.registration_threshold:
+    value: 10000
+    unit: MRP
+    effective_from: 2026-01-01
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII); разъяснение КГД"
+    source_url: https://www.gov.kz/memleket/entities/kgd/press/news/details/1096207?lang=ru
+    needs_review: false
+    note: "Оборот за календарный год, при превышении которого постановка на учёт по НДС обязательна (МРП на 1 января года)"
+  our.iit_ip_threshold:
+    value: 230000
+    unit: MRP
+    effective_from: 2026-01-01
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII), шкала ИПН для ИП на общеустановленном режиме"
+    source_url: https://adilet.zan.kz/rus/docs/K2500000214
+    needs_review: false
+    note: "Облагаемый доход за год, сверх которого ИПН ИП — 15%"
+  payroll.so.base_min:
+    value: 1
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Социальный кодекс РК; разъяснение ГФСС"
+    source_url: https://gfss.kz/en/social-contributions/frequently-asked-questions-on-paying-social-contributions/
+    needs_review: false
+    note: "Объект исчисления СО — не менее 1 МЗП в месяц"
+  payroll.so.base_max:
+    value: 7
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Социальный кодекс РК; разъяснение ГФСС"
+    source_url: https://gfss.kz/en/social-contributions/frequently-asked-questions-on-paying-social-contributions/
+    needs_review: false
+    legal_review: "Объект СО — доход работника за вычетом ОПВ: проверьте по Социальному кодексу"
+    note: "Объект исчисления СО — не более 7 МЗП в месяц"
+  payroll.oosms.base_max:
+    value: 40
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Закон РК «Об обязательном социальном медицинском страховании» (изменения с 2026 года)"
+    source_url: https://uchet.kz/news/oosms-vosms-povyshenie-verkhnego-predela-s-2026-goda/
     needs_review: true
-    note: "Обязательные пенсионные взносы работодателя (ОПВР). v0.3: jurisdiction.py:100"
+    note: "Предел дохода для ООСМС. 40 МЗП — по вторичным источникам 2026 года; до 2025 года было 10 МЗП, в законопроекте Минздрава — 50 МЗП"
+  payroll.opvr.base_min:
+    value: 1
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Социальный кодекс РК; разъяснение ЕНПФ"
+    source_url: https://www.enpf.kz/ru/services/pension/ups/330/281181/
+    needs_review: false
+    note: "Доход для ОПВР — не менее МЗП"
+  payroll.opvr.base_max:
+    value: 50
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Социальный кодекс РК; разъяснение ЕНПФ"
+    source_url: https://www.enpf.kz/ru/services/pension/ups/330/281181/
+    needs_review: false
+    note: "Доход для ОПВР — не более 50 МЗП в месяц"
+  payroll.opv.base_max:
+    value: 50
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Социальный кодекс РК; разъяснение ЕНПФ"
+    source_url: https://www.enpf.kz/ru/services/pension/ups/330/281179/
+    needs_review: false
+    note: "Доход для ОПВ — не более 50 МЗП в месяц"
+  payroll.vosms.base_max:
+    value: 20
+    unit: MZP
+    effective_from: 2026-01-01
+    source: "Закон РК «Об обязательном социальном медицинском страховании» (изменения с 2026 года)"
+    source_url: https://uchet.kz/news/oosms-vosms-povyshenie-verkhnego-predela-s-2026-goda/
+    needs_review: true
+    note: "Предел дохода для ВОСМС. 20 МЗП — по вторичным источникам 2026 года; до 2025 года было 10 МЗП"
+  social_tax.base_min:
+    value: 14
+    unit: MRP
+    effective_from: 2026-01-01
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII)"
+    source_url: https://mybuh.kz/useful/nalogi-s-zarplaty-2026-v-kazakhstane.html
+    needs_review: true
+    note: "Минимальная база соцналога за работника — 14 МРП в месяц; по вторичному источнику"
+  social_tax.ip_per_employee:
+    value: 1
+    unit: MRP
+    effective_from: 2026-01-01
+    source: "Налоговый кодекс РК 2026 (№ 214-VIII); разъяснение КГД"
+    source_url: https://kst.kgd.gov.kz/ru/news/socialnyy-nalog-izmeneniya-po-ischisleniyu-s-2026-goda-12-162396
+    needs_review: false
+    note: "Соцналог ИП на ОУР за каждого работника в месяц (за себя — 2 МРП)"
+indices:
+  mrp:
+    name: "МРП"
+    unit: KZT
+    values:
+      2025:
+        value: 3932
+        effective_from: 2025-01-01
+        source: "Закон РК «О республиканском бюджете на 2025–2027 годы»"
+        source_url: https://vko.kgd.gov.kz/ru/news/mrp-i-mzp-na-2025-god-8-151209
+        needs_review: false
+        note: "Месячный расчётный показатель"
+      2026:
+        value: 4325
+        effective_from: 2026-01-01
+        source: "Закон РК от 8 декабря 2025 года № 239-VIII «О республиканском бюджете на 2026–2028 годы», ст. 7"
+        source_url: https://adilet.zan.kz/rus/docs/Z2500000239
+        needs_review: false
+        note: "Месячный расчётный показатель"
+  mzp:
+    name: "МЗП"
+    unit: KZT
+    values:
+      2025:
+        value: 85000
+        effective_from: 2025-01-01
+        source: "Закон РК «О республиканском бюджете на 2025–2027 годы»"
+        source_url: https://vko.kgd.gov.kz/ru/news/mrp-i-mzp-na-2025-god-8-151209
+        needs_review: false
+        note: "Минимальный размер заработной платы"
+      2026:
+        value: 85000
+        effective_from: 2026-01-01
+        source: "Закон РК от 8 декабря 2025 года № 239-VIII «О республиканском бюджете на 2026–2028 годы», ст. 7"
+        source_url: https://adilet.zan.kz/rus/docs/Z2500000239
+        needs_review: false
+        note: "Минимальный размер заработной платы"

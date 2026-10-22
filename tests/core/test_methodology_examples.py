@@ -1,4 +1,4 @@
-"""Разобранные примеры docs/methodology.md (разделы 9–11) — golden-тесты.
+"""Разобранные примеры docs/methodology.md (разделы 9–11, 11.6) — golden-тесты.
 
 Если тест падает, расходятся код и документ: сначала правится документ
 (CLAUDE.md), потом код.
@@ -26,6 +26,7 @@ from rentab_core.models import (
     PricingModel,
     Project,
     Role,
+    Salary,
     Scenario,
     UsnObject,
     UsnProfile,
@@ -265,3 +266,94 @@ def test_v03_comparison_11_5() -> None:
     assert money(d(23_575) / d("0.59")) == d("39957.63")
     assert money(d(23_575) / d("0.64")) == d("36835.94")
     assert run(USN_6_VAT_5, fixed()).revenue == d(55_000)
+
+
+# ---------------------------------------------------------------------------
+# Раздел 11.6: взносы и вознаграждение из прибыли (фаза 3)
+# ---------------------------------------------------------------------------
+USN_6 = UsnProfile()
+USN_15 = UsnProfile(tax_object=UsnObject.INCOME_MINUS_EXPENSES)
+
+
+def salaried_lawyer_firm(profile: UsnProfile) -> Firm:
+    """Фирма 10.1, у юриста W = 150 000 ₽ — оклад 120 000 ₽ и взносы 25%."""
+    lawyer = TEAM[1].model_copy(
+        update={
+            "compensation": Salary(gross_salary=d(120_000), employer_contribution_rate=d("0.25"))
+        }
+    )
+    return example_firm(profile).model_copy(update={"team": (TEAM[0], lawyer, TEAM[2])})
+
+
+def profit_paid_partner_firm(profile: UsnProfile) -> Firm:
+    """Фирма 10.1, вознаграждение партнёра выплачивается из прибыли."""
+    partner = TEAM[0].model_copy(update={"paid_from_profit": True})
+    return example_firm(profile).model_copy(update={"team": (partner, *TEAM[1:])})
+
+
+def run_firm(firm: Firm, pricing: PricingModel) -> Estimate:
+    return calculate_estimate(Scenario(firm=firm, project=example_project(pricing)))
+
+
+def test_contributions_reduce_usn_income_tax_11_6() -> None:
+    estimate = run_firm(salaried_lawyer_firm(USN_6), HourlyPricing())
+    assert employee_cost(salaried_lawyer_firm(USN_6).team[1]).cost_rate == d(1_500)
+    assert estimate.total_costs == d(35_200)
+    assert estimate.tax.contributions == d(3_600)
+    # max(6 000 − 3 600; 0,5 × 6 000) = 3 000: работает предел 50%.
+    assert estimate.tax.tax == d(3_000)
+    assert estimate.tax.deduction_capped
+    assert estimate.nne == d(61_800)
+    assert [s.tax for s in estimate.stages] == [d(1_800), d(1_200)]
+
+
+def test_contributions_below_cap_reduce_stage_taxes_by_their_hours() -> None:
+    # Взносы 2 000 < 3 000: налог 4 000, этапы — t × R_s − S_s.
+    firm = salaried_lawyer_firm(USN_6)
+    lawyer = firm.team[1].model_copy(
+        update={
+            "compensation": Salary(
+                gross_salary=d(150_000) / d("1.125"), employer_contribution_rate=d("0.125")
+            )
+        }
+    )
+    firm = firm.model_copy(update={"team": (firm.team[0], lawyer, firm.team[2])})
+    estimate = run_firm(firm, HourlyPricing())
+    contributions_per_hour = d(150_000) / d("1.125") * d("0.125") / d(100)
+    assert estimate.tax.contributions == contributions_per_hour * 12
+    assert not estimate.tax.deduction_capped
+    assert estimate.tax.tax == d(6_000) - estimate.tax.contributions
+    s1, s2 = (contributions_per_hour * 8, contributions_per_hour * 4)
+    assert [s.tax for s in estimate.stages] == [d(3_600) - s1, d(2_400) - s2]
+    assert sum((s.tax for s in estimate.stages), d(0)) == estimate.tax.tax
+
+
+def test_contributions_fixed_price_11_6() -> None:
+    estimate = run_firm(salaried_lawyer_firm(USN_6), fixed())
+    assert money(estimate.revenue) == d("52537.31")
+    assert money(estimate.tax.tax) == d("1576.12")
+    assert money(estimate.nne) == d("15761.19")
+    assert abs(estimate.margin - d("0.30")) < d("1e-20")
+
+
+def test_profit_paid_partner_hourly_11_6() -> None:
+    estimate = run_firm(profit_paid_partner_firm(USN_15), HourlyPricing())
+    assert estimate.tax.nondeductible == d(8_000)
+    assert estimate.tax.tax == d(10_920)
+    assert estimate.nne == d(53_880)
+    assert [s.tax for s in estimate.stages] == [d(7_050), d(3_870)]
+
+
+def test_profit_paid_partner_fixed_price_11_6() -> None:
+    estimate = run_firm(profit_paid_partner_firm(USN_15), fixed())
+    assert money(estimate.revenue) == d("56581.82")
+    assert money(estimate.tax.tax) == d("4407.27")
+    assert money(estimate.nne) == d("16974.55")
+    assert abs(estimate.margin - d("0.30")) < d("1e-20")
+
+
+def test_profit_paid_partner_does_not_change_income_base_tax() -> None:
+    plain = run(USN_6_VAT_5, HourlyPricing())
+    flagged = run_firm(profit_paid_partner_firm(USN_6_VAT_5), HourlyPricing())
+    assert flagged.tax.tax == plain.tax.tax == d(6_000)
+    assert flagged.tax.nondeductible == 0

@@ -24,6 +24,7 @@ from rentab_core.models import (
     UsnVat,
     VatMode,
 )
+from rentab_core.money import ONE
 from rentab_core.pricing import net_of_vat
 from rentab_core.pricing.fixed import agreed_revenue, cost_plus_price, price_without_min_tax
 from rentab_core.pricing.hourly import capped_revenue, hourly_revenue, shadow_value
@@ -166,3 +167,35 @@ def test_min_tax_denominator_is_checked() -> None:
 def test_profit_base_price_covers_costs() -> None:
     assert USN_15.base == TaxBase.PROFIT
     assert price_without_min_tax(USN_15, d(1000), d(0)) == d(1000)
+
+
+def test_cost_plus_price_with_contributions_and_profit_reward() -> None:
+    # Пример 11.6 методологии.
+    with_contributions = cost_plus_price(USN_6, d(35_200), d("0.30"), contributions=d(3_600))
+    assert with_contributions == d(35_200) / (1 - d("0.03") - d("0.30"))
+    below_cap = cost_plus_price(USN_6, d(35_200), d("0.30"), contributions=d(500))
+    assert below_cap == (d(35_200) - d(500)) / d("0.64")
+    rewarded = cost_plus_price(USN_15, d(35_200), d("0.30"), nondeductible=d(8_000))
+    assert rewarded == (d(35_200) * d("0.85") + d("0.15") * d(8_000)) / d("0.55")
+
+
+@given(
+    cost=st.integers(min_value=1, max_value=10**8),
+    share=st.integers(min_value=0, max_value=100),
+    # Цель достижима при всех трёх режимах: m* + t < 1 и для ОСНО 25%.
+    margin_pct=st.integers(min_value=0, max_value=70),
+)
+def test_price_with_contributions_and_reward_hits_target_margin(
+    cost: int, share: int, margin_pct: int
+) -> None:
+    costs, margin = Decimal(cost), Decimal(margin_pct) / 100
+    part = costs * share / 100  # S и N — часть трудозатрат, не больше C
+    for terms, kwargs in (
+        (USN_6, {"contributions": part}),
+        (USN_15, {"nondeductible": part}),
+        (tax_terms(OsnoProfile()), {"nondeductible": part}),
+    ):
+        price = cost_plus_price(terms, costs, margin, **kwargs)
+        tax = calculate_tax(terms, price, costs, **kwargs)
+        nne = price - costs - tax.tax
+        assert abs(nne - margin * price) <= Decimal("1e-15") * max(price, ONE)

@@ -86,10 +86,11 @@ class UsnVat(StrEnum):
 
 
 class SocialContributions(StrEnum):
-    """Тариф страховых взносов работодателя в РФ."""
+    """Тариф страховых взносов работодателя в РФ (docs/methodology.md, раздел 3.1.1)."""
 
-    STANDARD = "standard"
-    ZERO = "zero"
+    STANDARD = "standard"  # общий: 30% до единой предельной базы, 15,1% сверх
+    SME = "sme"  # МСП из приоритетных отраслей: 15% с выплат сверх 1,5 МРОТ
+    ZERO = "zero"  # нулевой — особые категории плательщиков (из v0.3)
 
 
 class NpdClientType(StrEnum):
@@ -252,8 +253,9 @@ JUNIOR_ROLES: frozenset[Role] = frozenset({Role.ASSOCIATE, Role.INTERN})
 class Salary(CoreModel):
     """Полная стоимость сотрудника из оклада и взносов работодателя.
 
-    Взносы — плоская ставка от оклада; предельная база и пониженные тарифы —
-    фаза 3 (L-08).
+    Взносы — доля оклада. По умолчанию интерфейс подставляет эффективную
+    ставку за год с учётом предельной базы и тарифа
+    (`tax.payroll.employer_contribution_rate`, L-08).
     """
 
     kind: Literal["salary"] = "salary"
@@ -289,6 +291,14 @@ class MonthlyCost(CoreModel):
 
 Compensation = Annotated[Salary | MonthlyCost, Field(discriminator="kind")]
 
+# Страна трудоустройства по валюте оклада: KZT — РК, остальные валюты — РФ.
+EMPLOYMENT_COUNTRY: Mapping[Currency, Country] = {Currency.KZT: Country.KZ}
+
+
+def employment_country(currency: Currency) -> Country:
+    """Страна трудоустройства сотрудника с окладом в валюте currency."""
+    return EMPLOYMENT_COUNTRY.get(currency, Country.RF)
+
 
 class Employee(CoreModel):
     """Сотрудник, чьи часы продаются клиенту.
@@ -305,6 +315,8 @@ class Employee(CoreModel):
         billing_rate: Ставка для клиента за час.
         contract_hours_per_month: Контрактные часы в месяц.
         target_utilization: Доля контрактных часов, которая продаётся клиентам.
+        paid_from_profit: Вознаграждение выплачивается из прибыли (дивидендами):
+            для налога «доходы − расходы» оно не расход (methodology.md, раздел 5.1).
     """
 
     name: str
@@ -314,6 +326,12 @@ class Employee(CoreModel):
     billing_rate: NonNegativeDecimal = ZERO
     contract_hours_per_month: PositiveDecimal = DEFAULT_CONTRACT_HOURS_PER_MONTH
     target_utilization: Utilization = DEFAULT_TARGET_UTILIZATION
+    paid_from_profit: bool = False
+
+    @property
+    def employment_country(self) -> Country:
+        """Страна трудоустройства — по валюте оклада."""
+        return employment_country(self.currency)
 
 
 class Period(StrEnum):
@@ -336,12 +354,43 @@ class Overhead(CoreModel):
 class ExchangeRates(CoreModel):
     """Курсы валют: цена единицы валюты в рублях, как публикует ЦБ РФ.
 
-    В фазе 2 курсы вводятся вручную; загрузка курсов ЦБ РФ и НБРК — фаза 3.
-    None — курс не задан: пересчёт через эту валюту невозможен.
+    Курсы вводятся вручную или загружаются с сайта ЦБ РФ / НБРК
+    (`fx.fetch_rates`). None — курс не задан: пересчёт через эту валюту
+    невозможен.
     """
 
     rub_per_kzt: PositiveDecimal | None = None
     rub_per_usd: PositiveDecimal | None = None
+
+
+class LegalForm(StrEnum):
+    """Организационно-правовая форма фирмы в РФ (для применимости режимов)."""
+
+    ORGANIZATION = "organization"  # ООО и др.
+    ENTREPRENEUR = "entrepreneur"  # ИП
+    INDIVIDUAL = "individual"  # физлицо без статуса ИП — только НПД
+
+
+class FirmFacts(CoreModel):
+    """Данные фирмы для проверки применимости налоговых режимов (раздел 15).
+
+    None — значение не задано: проверки по нему пропускаются.
+
+    Attributes:
+        rf_legal_form: Организационно-правовая форма в РФ.
+        annual_income_rf: Ожидаемый доход за год в РФ без НДС, ₽.
+        annual_income_kz: Ожидаемый оборот за год в РК без НДС, ₸.
+        headcount: Средняя численность работников по трудовым договорам;
+            None — по числу сотрудников в команде.
+        agency_contracts: Фирма работает по договорам поручения, комиссии или
+            агентским (например, платит пошлины за клиента как агент).
+    """
+
+    rf_legal_form: LegalForm = LegalForm.ORGANIZATION
+    annual_income_rf: NonNegativeDecimal | None = None
+    annual_income_kz: NonNegativeDecimal | None = None
+    headcount: Annotated[int, Field(ge=0)] | None = None
+    agency_contracts: bool = False
 
 
 class Firm(CoreModel):
@@ -358,6 +407,7 @@ class Firm(CoreModel):
             считается последний сотрудник.
         overheads: Накладные расходы фирмы.
         exchange_rates: Курсы для пересчёта сумм в валюту проекта.
+        facts: Данные для проверки применимости налоговых режимов.
     """
 
     name: str = ""
@@ -365,6 +415,7 @@ class Firm(CoreModel):
     team: tuple[Employee, ...] = ()
     overheads: tuple[Overhead, ...] = ()
     exchange_rates: ExchangeRates = Field(default_factory=ExchangeRates)
+    facts: FirmFacts = Field(default_factory=FirmFacts)
 
     def team_by_name(self) -> dict[str, Employee]:
         """Сотрудники по имени; при совпадении имён побеждает последний (как в v0.3)."""

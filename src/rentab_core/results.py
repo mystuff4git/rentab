@@ -25,8 +25,8 @@ from rentab_core.money import ONE, ZERO, Currency
 class TaxBase(StrEnum):
     """База налога на доход или прибыль."""
 
-    INCOME = "income"  # «доходы»: Tax = t × R
-    PROFIT = "profit"  # «доходы − расходы»: Tax = max(t × max(R − C, 0), t_min × R)
+    INCOME = "income"  # «доходы»: Tax = max(t × R − S, (1 − κ) × t × R)
+    PROFIT = "profit"  # «доходы − расходы»: Tax = max(t × max(R − C + N, 0), t_min × R)
 
 
 class TaxTerms(CoreModel):
@@ -38,6 +38,8 @@ class TaxTerms(CoreModel):
         rate: Ставка налога t.
         min_rate: Ставка минимального налога t_min (доля выручки); 0 — нет.
         vat_rate: Ставка НДС v; 0 — режим без НДС.
+        contributions_deduction_cap: Предел уменьшения налога на взносы κ
+            (доля налога, база «доходы»); 0 — уменьшения нет.
     """
 
     regime_label: str
@@ -45,6 +47,7 @@ class TaxTerms(CoreModel):
     rate: Decimal
     min_rate: Decimal = ZERO
     vat_rate: Decimal = ZERO
+    contributions_deduction_cap: Decimal = ZERO
 
 
 class TaxResult(CoreModel):
@@ -54,11 +57,14 @@ class TaxResult(CoreModel):
         terms: Параметры режима.
         revenue: Выручка за услуги без НДС R.
         costs: Издержки проекта C (для базы «доходы − расходы»).
-        taxable_base: R для базы «доходы», max(R − C, 0) — для «доходы − расходы».
-        regular_tax: t × taxable_base.
+        taxable_base: R для базы «доходы», max(R − C + N, 0) — для «доходы − расходы».
+        regular_tax: t × taxable_base за вычетом уменьшения на взносы.
         min_tax: t_min × R.
         tax: Налог проекта: max(regular_tax, min_tax). Расход фирмы.
         vat: НДС, предъявляемый клиенту сверху: v × R. Не доход и не расход фирмы.
+        contributions: Взносы на часах проекта S, на которые можно уменьшить налог.
+        deduction: На сколько налог уменьшен на взносы: min(S, κ × t × R).
+        nondeductible: Вознаграждение из прибыли N, которое не уменьшает базу.
     """
 
     terms: TaxTerms
@@ -69,6 +75,9 @@ class TaxResult(CoreModel):
     min_tax: Decimal
     tax: Decimal
     vat: Decimal
+    contributions: Decimal = ZERO
+    deduction: Decimal = ZERO
+    nondeductible: Decimal = ZERO
 
     @property
     def regime_label(self) -> str:
@@ -82,8 +91,13 @@ class TaxResult(CoreModel):
 
     @property
     def profit_tax_applied(self) -> bool:
-        """Налог проекта — налог на прибыль t × (R − C) > 0 (база «доходы − расходы»)."""
+        """Налог проекта — налог на прибыль t × (R − C + N) > 0 (база «доходы − расходы»)."""
         return self.terms.base == TaxBase.PROFIT and not self.min_tax_applied and self.tax > 0
+
+    @property
+    def deduction_capped(self) -> bool:
+        """Уменьшение на взносы упёрлось в предел κ: часть взносов не учтена."""
+        return self.contributions > self.deduction
 
 
 class EstimateLine(CoreModel):
@@ -92,6 +106,10 @@ class EstimateLine(CoreModel):
     Attributes:
         cost_rate: Себестоимость биллируемого часа c = W / (H × u).
         contract_cost_rate: Себестоимость контрактного часа ĉ = W / H.
+        contributions_rate: Взносы работодателя на биллируемый час s = взносы / K,
+            если сотрудник трудоустроен в стране расчёта налога; иначе 0.
+        tax_deductible: Трудозатраты — расход для налога «доходы − расходы»
+            (False — вознаграждение выплачивается из прибыли).
     """
 
     stage_name: str
@@ -101,6 +119,8 @@ class EstimateLine(CoreModel):
     cost_rate: Decimal
     contract_cost_rate: Decimal
     hours: Decimal
+    contributions_rate: Decimal = ZERO
+    tax_deductible: bool = True
 
     @property
     def shadow_value(self) -> Decimal:
@@ -116,6 +136,16 @@ class EstimateLine(CoreModel):
     def underutilization_cost(self) -> Decimal:
         """Стоимость недозагрузки строки: (c − ĉ) × часы."""
         return (self.cost_rate - self.contract_cost_rate) * self.hours
+
+    @property
+    def contributions(self) -> Decimal:
+        """Взносы на часах строки: s × часы."""
+        return self.contributions_rate * self.hours
+
+    @property
+    def nondeductible_cost(self) -> Decimal:
+        """Трудозатраты, которые не уменьшают базу налога (вознаграждение из прибыли)."""
+        return ZERO if self.tax_deductible else self.labor_cost
 
 
 class DisbursementLine(CoreModel):

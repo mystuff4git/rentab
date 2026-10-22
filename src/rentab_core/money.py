@@ -69,3 +69,13 @@ def round_to(value: Decimal, quantum: Decimal = MONEY_QUANTUM) -> Decimal:
 def decimal_sum(values: Iterable[Decimal]) -> Decimal:
     """Сумма Decimal; для пустой последовательности — Decimal(0), а не int 0."""
     return sum(values, ZERO)
+
+
+def format_number(value: Decimal) -> str:
+    """Число для текста: «1 234 567», «88 359,38», «0,5» — без округления."""
+    integer, _, fraction = f"{value.normalize():f}".partition(".")
+    sign = "-" if integer.startswith("-") else ""
+    digits = integer.lstrip("-")
+    groups = [digits[max(i - 3, 0) : i] for i in range(len(digits), 0, -3)][::-1]
+    text = sign + " ".join(groups)
+    return f"{text},{fraction}" if fraction else text
