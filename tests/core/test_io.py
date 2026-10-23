@@ -17,6 +17,7 @@ from hypothesis import strategies as st
 from rentab_core.demo import TM_APPLICATION, TM_EXAMINATION, demo_workspace
 from rentab_core.duties import ApplicantCategory, Quantity, load_catalog
 from rentab_core.errors import ProfileImportError
+from rentab_core.estimate import calculate_estimate
 from rentab_core.fx import RateSource, RatesQuote
 from rentab_core.io import (
     FORMAT_ID,
@@ -34,6 +35,7 @@ from rentab_core.io.files import _error_message
 from rentab_core.io.migrations import MIGRATIONS, RawProfile, info, upgrade
 from rentab_core.io.schema import json_schema_text, main
 from rentab_core.models import (
+    ActualHours,
     Assignment,
     CappedPricing,
     Country,
@@ -56,6 +58,7 @@ from rentab_core.models import (
     Period,
     PricingModel,
     Project,
+    ProjectActuals,
     Role,
     Salary,
     SocialContributions,
@@ -65,8 +68,8 @@ from rentab_core.models import (
     UsnVat,
     VatMode,
 )
-from rentab_core.money import Currency
-from tests.core.factories import d
+from rentab_core.money import Currency, round_to
+from tests.core.factories import actuals, d, stage
 
 SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "profile.schema.json"
 EXPORTED_AT = dt.datetime(2026, 10, 22, 15, 0, tzinfo=dt.UTC)
@@ -282,6 +285,28 @@ def projects(draw: st.DrawFn) -> ProjectRecord:
         )
     )
     actions = [duty.action for duty in load_catalog(Country.RF).duties]
+    fact_rows = draw(
+        st.lists(
+            st.tuples(st.sampled_from(stage_names), st.sampled_from(["Партнёр", "Юрист"])),
+            unique=True,
+            max_size=4,
+        )
+        if stage_names
+        else st.just([])
+    )
+    project_actuals = draw(
+        st.none()
+        | st.builds(
+            ProjectActuals,
+            hours=st.just(
+                tuple(
+                    ActualHours(stage=stage_name, employee=who, hours=Decimal(len(who)))
+                    for stage_name, who in fact_rows
+                )
+            ),
+            billed=st.none() | positive_money,
+        )
+    )
     return ProjectRecord(
         project=Project(
             name=draw(st.text(max_size=30)),
@@ -292,6 +317,7 @@ def projects(draw: st.DrawFn) -> ProjectRecord:
             calc_country=draw(st.none() | st.sampled_from(Country)),
             stages=stages,
             disbursements=tuple(expenses),
+            actuals=project_actuals,
         ),
         duties={
             Country.RF: DutySelection(
@@ -316,7 +342,7 @@ def test_random_projects_round_trip(records: list[ProjectRecord]) -> None:
 # ---------------------------------------------------------------------------
 def test_duty_amounts_are_written_for_reference() -> None:
     raw = raw_file()
-    trademark = raw["projects"][2]
+    trademark = raw["projects"][1]
     assert trademark["duties"]["RF"] == {
         "actions": [TM_APPLICATION, TM_EXAMINATION],
         "quantities": {"classes": 3},
@@ -331,7 +357,7 @@ def test_duty_amounts_are_written_for_reference() -> None:
 
 def test_duties_are_recalculated_by_current_catalog() -> None:
     raw = raw_file()
-    raw["projects"][2]["duties"]["RF"]["amounts_at_export"][TM_APPLICATION] = "5000"
+    raw["projects"][1]["duties"]["RF"]["amounts_at_export"][TM_APPLICATION] = "5000"
     result = loads(encode(raw))
     (note,) = result.notes
     assert note.level == NoteLevel.WARNING
@@ -339,7 +365,7 @@ def test_duties_are_recalculated_by_current_catalog() -> None:
         f"Проект «Регистрация товарного знака»: пошлина «{TM_APPLICATION}» при выгрузке была "
         "5 000 ₽, по текущему каталогу — 6 000 ₽. В смете будет новая сумма."
     )
-    record = result.workspace.projects[2]
+    record = result.workspace.projects[1]
     assert record.duties[Country.RF].amounts_at_export == {}
     duties = record.to_project().disbursements[:2]
     assert [item.amount for item in duties] == [d(6_000), d(18_000)]
@@ -349,11 +375,11 @@ def test_unknown_duty_is_skipped_and_old_name_is_renamed() -> None:
     catalog = load_catalog(Country.RF)
     (aliased,) = [duty for duty in catalog.duties if duty.aliases][:1]
     raw = raw_file()
-    raw["projects"][4]["duties"] = {
+    raw["projects"][3]["duties"] = {
         "RF": {"actions": ["Несуществующая пошлина", aliased.aliases[0], aliased.action]}
     }
     result = loads(encode(raw))
-    assert result.workspace.projects[4].duties[Country.RF].actions == (aliased.action,)
+    assert result.workspace.projects[3].duties[Country.RF].actions == (aliased.action,)
     (note,) = result.notes
     assert note.message == (
         "Проект «Ответ на уведомление экспертизы»: пошлины «Несуществующая пошлина» нет в "
@@ -388,7 +414,7 @@ def test_unknown_employee_in_assignment_is_reported() -> None:
     raw["projects"][0]["project"]["stages"][0]["assignments"][0]["employee"] = "Уволенный"
     (note,) = loads(encode(raw)).notes
     assert note.message == (
-        "Проект «Слайд 3: план», этап «Проект»: исполнителя «Уволенный» нет в команде — "
+        "Проект «Слайд 3: план и факт», этап «Проект»: исполнителя «Уволенный» нет в команде — "
         "назначение не войдёт в расчёт."
     )
 
@@ -549,3 +575,64 @@ def test_schema_main_writes_file_or_stdout(
     assert target.read_text(encoding="utf-8") == json_schema_text()
     main([])
     assert capsys.readouterr().out == json_schema_text()
+
+
+# ---------------------------------------------------------------------------
+# Совместимость: файл, выгруженный приложением фазы 4
+# ---------------------------------------------------------------------------
+# Выгрузка демо-фирмы кодом фазы 4 (main@64ab11e), до появления факта (фаза 5).
+PHASE4_FIXTURE = Path(__file__).parents[1] / "fixtures" / "profile" / "phase4_demo.json"
+# NNE смет демо-фирмы фазы 4: слайд 3 (план, факт), товарный знак, изобретение, потолок.
+PHASE4_NNE = (d(225_500), d(-2_200), d(58_800), d(49_125), d(32_200))
+
+
+def test_phase4_file_loads_unchanged() -> None:
+    data = PHASE4_FIXTURE.read_bytes()
+    result = loads(data)
+    assert result.notes == ()
+    assert result.source_version == 1
+    workspace = result.workspace
+    assert [record.project.name for record in workspace.projects] == [
+        "Слайд 3: план",
+        "Слайд 3: факт — партнёр тянет проект",
+        "Регистрация товарного знака",
+        "Патентование изобретения",
+        "Ответ на уведомление экспертизы",
+    ]
+    nne = tuple(
+        calculate_estimate(record.scenario(workspace.firm)).nne for record in workspace.projects
+    )
+    assert tuple(round_to(value) for value in nne) == PHASE4_NNE
+    # Повторная выгрузка совпадает с файлом фазы 4: новые поля без значения не пишутся.
+    assert dumps(workspace, exported_at=EXPORTED_AT) == data
+
+
+def test_actuals_round_trip_and_are_omitted_when_empty() -> None:
+    project = Project(
+        name="С фактом",
+        stages=(stage("Проект", ("Партнёр", 5)),),
+        actuals=actuals(("Проект", "Партнёр", 62), ("Проект", "Стажёр", 1), billed=280_000),
+    )
+    workspace = demo_workspace().model_copy(
+        update={"projects": (ProjectRecord(project=project), ProjectRecord())}
+    )
+    raw = raw_file(workspace)
+    assert raw["projects"][0]["project"]["actuals"] == {
+        "hours": [
+            {"stage": "Проект", "employee": "Партнёр", "hours": "62"},
+            {"stage": "Проект", "employee": "Стажёр", "hours": "1"},
+        ],
+        "billed": "280000",
+    }
+    # Проект без факта пишется без поля: такой файл читает и приложение фазы 4.
+    assert "actuals" not in raw["projects"][1]["project"]
+    assert loads(dumps(workspace)).workspace == workspace
+
+
+def test_actuals_on_unknown_stage_point_to_project() -> None:
+    raw = raw_file()
+    raw["projects"][0]["project"]["actuals"] = {
+        "hours": [{"stage": "Нет такого", "employee": "Партнёр", "hours": "1"}]
+    }
+    with pytest.raises(ProfileImportError, match=r"projects\[0\]\.project: Факт «Партнёр»"):
+        loads(encode(raw))

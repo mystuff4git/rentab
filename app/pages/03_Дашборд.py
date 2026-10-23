@@ -14,9 +14,12 @@ import datetime as dt
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from pydantic import ValidationError
 
-from rentab_core import dashboard, estimate_xlsx
+from rentab_core import RentabError, dashboard, estimate_xlsx
 from rentab_core.analysis.dashboard import Profitability
+from rentab_core.analysis.plan_fact import plan_fact
+from rentab_core.analysis.sensitivity import BreakEvenStatus, break_even
 from rentab_core.models import ROLE_LABELS, CappedPricing, FixedPricing
 from rentab_core.money import CURRENCY_SYMBOLS, PERCENT
 from rentab_core.results import Estimate
@@ -26,6 +29,8 @@ from ui.labels import (
     PROFITABILITY_MESSAGES,
     STAGE_FLAG_BG_COLORS,
     STAGE_FLAG_LABELS,
+    money,
+    signed_hours,
 )
 from ui.projects import render_project_switcher
 
@@ -116,6 +121,40 @@ for item in result.unresolved_assignments:
         f"Этап «{item.stage_name}»: исполнителя «{item.employee}» нет в команде, "
         "назначение не вошло в расчёт."
     )
+
+
+def render_analytics_teaser(estimate: Estimate) -> None:
+    """Запас часов и NNE по факту — если смета рассчитана по текущим данным проекта."""
+    try:
+        scenario = state.scenario()
+        report = break_even(scenario)
+    except (ValidationError, RentabError):
+        return
+    mix = report.rows[0]
+    if mix.nne != estimate.nne or report.revenue != estimate.revenue:
+        return
+    symbol = CURRENCY_SYMBOLS[estimate.currency]
+    if mix.status == BreakEvenStatus.HEADROOM and mix.extra_hours is not None:
+        text = f"🎯 Запас часов до безубыточности (микс проекта): {signed_hours(mix.extra_hours)}"
+    elif mix.status == BreakEvenStatus.NOT_REACHED:
+        text = "🎯 Часы сверх плана оплачивает клиент: точка безубыточности не наступает"
+    else:
+        text = "🎯 Проект убыточен по плану: что делать с часами — на странице «Чувствительность»"
+    col_text, col_link = st.columns([3, 1])
+    col_text.markdown(text)
+    col_link.page_link("pages/04_Чувствительность.py", label="Чувствительность", icon="➡️")
+    if scenario.project.actuals is not None:
+        try:
+            fact = plan_fact(scenario).fact
+        except RentabError:
+            return
+        col_text.markdown(
+            f"📈 NNE по факту: {money(fact.nne, symbol)} (по плану {money(estimate.nne, symbol)})"
+        )
+        col_link.page_link("pages/06_План–факт.py", label="План–факт", icon="➡️")
+
+
+render_analytics_teaser(result)
 
 st.markdown("---")
 col_chart, col_metrics = st.columns([1.4, 1])

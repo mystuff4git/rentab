@@ -34,7 +34,7 @@ BYTES_PER_MB = 1024 * 1024
 
 
 def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
-    """Все страницы и все действия с данными: демо, курсы, команда, проекты, файлы."""
+    """Все страницы и все действия с данными: демо, курсы, команда, проекты, аналитика, файлы."""
     app = run_page("Home.py")
     click(app, "🎓 Загрузить демо-фирму")
 
@@ -49,7 +49,7 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     app.switch_page("pages/02_Проект.py").run()
     ids = slot_ids(app)
     click(app, "💰 Рассчитать смету")
-    switch(app, ids[2])
+    switch(app, ids[1])
     click(app, "💰 Рассчитать смету")
     click(app, "⧉ Копия")
     click(app, "➕ Новый")
@@ -58,11 +58,30 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
 
     # Дашборд собирает смету XLSX для кнопки «Скачать».
     app.switch_page("pages/03_Дашборд.py").run()
-    switch(app, ids[2])
+    switch(app, ids[1])
     assert app.get("download_button")
+
+    # Аналитика: ползунки «что если» и торнадо, матрица сравнения, ввод факта.
+    app.switch_page("pages/04_Чувствительность.py").run()
+    app.slider(key=state.WHATIF_HOURS).set_value(50).run()
+    app.slider(key=state.TORNADO_PCT).set_value(20).run()
+    click(app, "↺ Сбросить «что если»")
+    app.switch_page("pages/05_Сравнение.py").run()
+    app.number_input(key=state.COMPARE_CAP).set_value(90_000.0).run()
+    app.radio(key=state.COMPARE_METRIC).set_value("total_client").run()
+    app.checkbox(key=state.COMPARE_ALL_VARIANTS).check().run()
+    app.switch_page("pages/06_План–факт.py").run()
+    switch(app, ids[2])
+    click(app, "📋 Заполнить факт по плану")
+    app.number_input(key="unplanned_hours").set_value(2.0)
+    click(app, "➕ Добавить")
+    app.checkbox(key=state.ACTUAL_BILLED_MANUAL).check().run()
+    app.number_input(key=state.ACTUAL_BILLED).set_value(100_000.0).run()
+    assert app.session_state[state.ACTUAL_HOURS]
 
     app.switch_page("Home.py").run()
     data = exported(downloads)
+    assert b'"actuals"' in data
     upload(app, data)
     click(app, "📂 Загрузить данные из файла")
     click(app, "Заменить данные")

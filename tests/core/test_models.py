@@ -38,7 +38,7 @@ from rentab_core.models import (
     VatMode,
 )
 from rentab_core.money import Currency
-from tests.core.factories import basic_scenario, d, disbursement, stage
+from tests.core.factories import actuals, basic_scenario, d, disbursement, stage
 
 ZERO_COST = {"kind": "monthly", "amount": 0}
 
@@ -181,6 +181,30 @@ def test_disbursement_stage_must_exist() -> None:
             stages=(stage("Подача", ("Петрова", 1)),),
             disbursements=(disbursement(DisbursementKind.OWN, 1, stage="Ответ"),),
         )
+
+
+def test_actuals_default_to_none_and_reference_stages() -> None:
+    assert Project().actuals is None
+    project = Project(
+        stages=(stage("Подача", ("Петрова", 1)),),
+        actuals=actuals(("Подача", "Петрова", 2), ("Подача", "Иванов", 1), billed=1000),
+    )
+    assert project.actuals is not None
+    assert project.actuals.billed == d(1000)
+    with pytest.raises(ValidationError, match="Факт «Петрова» относится к неизвестному этапу"):
+        Project(stages=(stage("Подача", ("Петрова", 1)),), actuals=actuals(("Ответ", "Петрова", 1)))
+
+
+def test_actuals_pairs_are_unique_and_hours_non_negative() -> None:
+    with pytest.raises(ValidationError, match="на этапе «Подача» указан дважды"):
+        Project(
+            stages=(stage("Подача", ("Петрова", 1)),),
+            actuals=actuals(("Подача", "Петрова", 1), ("Подача", "Петрова", 2)),
+        )
+    with pytest.raises(ValidationError):
+        actuals(("Подача", "Петрова", -1))
+    with pytest.raises(ValidationError):
+        actuals(billed=0)
 
 
 @pytest.mark.parametrize(

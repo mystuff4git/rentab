@@ -21,6 +21,10 @@ Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl, pyth
   JSON Schema `docs/profile.schema.json` генерируется из моделей. Изменили модели ядра —
   перегенерировать схему; старые файлы не читаются — новая версия и шаг миграции.
   Демо-фирма — `src/rentab_core/demo.py`.
+- `src/rentab_core/analysis/` — аналитика смет: светофор этапов, KPI дашборда,
+  чувствительность (запас часов, торнадо, «что если»), план–факт (`Project.actuals`),
+  сравнение «модель цены × налоговый режим». Страницы `app/pages/04–06`; факт и
+  «что если» — ключи проекта в `ui/state.py`.
 - `src/rentab_core/rates/*.yaml` — ЕДИНСТВЕННОЕ место ставок, порогов (в RUB/KZT/МРП/МЗП/МРОТ),
   показателей по годам и шкал; у каждой записи: value, effective_from, source, source_url,
   needs_review, legal_review. `needs_review: false` без источника схема не пропустит.
@@ -53,7 +57,10 @@ NNE = R − C − Tax;  m = NNE / R
   пересобирается из его же результата (иначе правки теряются, L-21). Виджет с ключом,
   который остаётся на экране, не принимает новый `default` (браузер хранит старое
   значение): менять его значение — только явным присваиванием ключа, не удалением ключа.
-  AppTest этого не ловит — проверять в браузере (`docs/screenshots/phase-4/shots.js`).
+  AppTest этого не ловит — проверять в браузере (`docs/screenshots/phase-5/shots.js`:
+  факт, «что если», правка ячеек редактора; `phase-4/shots.js`: пошлины). Ключ
+  `st.data_editor`, который зависит от проекта, меняется при смене проекта.
+  Дельты `st.metric` — с ASCII-минусом: по нему Streamlit выбирает стрелку и цвет.
 - Перед PR: ruff, mypy, pytest зелёные; для UI — скриншоты через Playwright.
 - Одна фаза = одна ветка = один PR. Фазы описаны в docs/ROADMAP.md.
 
@@ -90,6 +97,7 @@ uv run streamlit run app/Home.py # приложение (конфиг — .strea
     разница только в налоговой методологии (НДС, минимальный налог).
   - Изменили формулу — обновить снимки ядра (`--update-snapshots`), перегенерировать
     мост и объяснить diff в PR.
-- Тесты ядра — `tests/core/` (golden: примеры `methodology.md` и слайд 3), smoke-тесты
+- Тесты ядра — `tests/core/` (golden: примеры `methodology.md` и слайд 3; случайные
+  сценарии для property-тестов — `tests/core/strategies.py`), smoke-тесты
   интерфейса — `tests/app/` (`streamlit.testing`, запуск с `Home.py` и `switch_page`).
 - Архитектурные решения — `docs/adr/`.

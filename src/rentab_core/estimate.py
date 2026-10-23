@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import assert_never
 
 from rentab_core.analysis.stages import StageLines, stage_results
@@ -92,11 +93,15 @@ def resolve_stages(
     return stages, unresolved
 
 
-def calculate_estimate(scenario: Scenario) -> Estimate:
+def calculate_estimate(scenario: Scenario, *, revenue: Decimal | None = None) -> Estimate:
     """Рассчитывает смету проекта.
 
     Args:
         scenario: Фирма и проект.
+        revenue: Выручка без НДС, заданная извне: цена «издержки + маржа»,
+            которая держится на цене плана, или фактически выставленная сумма
+            (docs/methodology.md, разделы 16.3 и 18.2). None — по модели цены
+            проекта.
 
     Returns:
         Смета в валюте страны расчёта налога.
@@ -136,24 +141,25 @@ def calculate_estimate(scenario: Scenario) -> Estimate:
     shadow = shadow_value(lines)
 
     pricing = project.pricing
-    match pricing:
-        case HourlyPricing():
-            revenue = hourly_revenue(shadow, project.vat_mode, terms.vat_rate)
-        case CappedPricing():
-            revenue = capped_revenue(shadow, pricing.cap, project.vat_mode, terms.vat_rate)
-        case FixedPricing():
-            if pricing.price is None:
-                revenue = cost_plus_price(
-                    terms,
-                    total_costs,
-                    project.target_margin,
-                    contributions=contributions,
-                    nondeductible=nondeductible,
-                )
-            else:
-                revenue = agreed_revenue(pricing.price, project.vat_mode, terms.vat_rate)
-        case _:
-            assert_never(pricing)
+    if revenue is None:
+        match pricing:
+            case HourlyPricing():
+                revenue = hourly_revenue(shadow, project.vat_mode, terms.vat_rate)
+            case CappedPricing():
+                revenue = capped_revenue(shadow, pricing.cap, project.vat_mode, terms.vat_rate)
+            case FixedPricing():
+                if pricing.price is None:
+                    revenue = cost_plus_price(
+                        terms,
+                        total_costs,
+                        project.target_margin,
+                        contributions=contributions,
+                        nondeductible=nondeductible,
+                    )
+                else:
+                    revenue = agreed_revenue(pricing.price, project.vat_mode, terms.vat_rate)
+            case _:
+                assert_never(pricing)
 
     tax = calculate_tax(
         terms, revenue, total_costs, contributions=contributions, nondeductible=nondeductible

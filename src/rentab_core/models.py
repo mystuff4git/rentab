@@ -509,6 +509,30 @@ class FixedPricing(CoreModel):
 PricingModel = Annotated[HourlyPricing | CappedPricing | FixedPricing, Field(discriminator="kind")]
 
 
+class ActualHours(CoreModel):
+    """Фактические часы сотрудника на этапе (docs/methodology.md, раздел 18.1)."""
+
+    stage: str = Field(description="Название этапа проекта")
+    employee: str = Field(description="Имя сотрудника из Firm.team")
+    hours: NonNegativeDecimal
+
+
+class ProjectActuals(CoreModel):
+    """Факт проекта для план–факта (docs/methodology.md, раздел 18).
+
+    Attributes:
+        hours: Фактические часы по парам «этап × сотрудник»; пары уникальны.
+            Назначение плана без строки факта считается нулём часов; строка
+            без назначения в плане — работа вне плана.
+        billed: Фактически выставлено клиенту (в режиме НДС проекта); None —
+            по модели цены: почасовая — факт по ставкам, с потолком — не
+            больше потолка, фикс — цена плана.
+    """
+
+    hours: tuple[ActualHours, ...] = ()
+    billed: PositiveDecimal | None = None
+
+
 class Project(CoreModel):
     """Проект для сметы.
 
@@ -524,6 +548,7 @@ class Project(CoreModel):
         disbursements: Прямые расходы: пошлины из каталога, затем
             произвольные расходы (порядок важен для сметы).
         calc_country: Страна расчёта налога; учитывается только в режиме «Оба».
+        actuals: Факт проекта; None — факт не введён. Смету плана не меняет.
     """
 
     name: str = ""
@@ -535,10 +560,11 @@ class Project(CoreModel):
     stages: tuple[Stage, ...] = ()
     disbursements: tuple[Disbursement, ...] = ()
     calc_country: Country | None = None
+    actuals: ProjectActuals | None = None
 
     @model_validator(mode="after")
     def _check_stages(self) -> Project:
-        """Названия этапов уникальны; расходы ссылаются на существующие этапы."""
+        """Названия этапов уникальны; расходы и факт ссылаются на существующие этапы."""
         names = [stage.name for stage in self.stages]
         duplicates = sorted({name for name in names if names.count(name) > 1})
         if duplicates:
@@ -551,6 +577,16 @@ class Project(CoreModel):
                 raise ValueError(
                     f"Расход «{item.name}» привязан к неизвестному этапу «{item.stage}»"
                 )
+        if self.actuals is not None:
+            pairs: set[tuple[str, str]] = set()
+            for row in self.actuals.hours:
+                if row.stage not in known:
+                    raise ValueError(
+                        f"Факт «{row.employee}» относится к неизвестному этапу «{row.stage}»"
+                    )
+                if (row.stage, row.employee) in pairs:
+                    raise ValueError(f"Факт «{row.employee}» на этапе «{row.stage}» указан дважды")
+                pairs.add((row.stage, row.employee))
         return self
 
 

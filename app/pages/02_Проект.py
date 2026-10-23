@@ -199,8 +199,10 @@ else:
                 if remaining:
                     stages[stage_idx] = stage.model_copy(update={"assignments": remaining})
                 else:
-                    # Этап удалён: привязанные к нему расходы делятся по всем этапам.
+                    # Этап удалён: привязанные к нему расходы делятся по всем этапам,
+                    # факт по нему удаляется.
                     stages.pop(stage_idx)
+                    state.drop_stage_actuals(stage.name)
                     expenses = state.custom_expenses()
                     expenses[:] = [
                         item.model_copy(update={"stage": None})

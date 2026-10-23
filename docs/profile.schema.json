@@ -1,5 +1,40 @@
 {
   "$defs": {
+    "ActualHours": {
+      "additionalProperties": false,
+      "description": "Фактические часы сотрудника на этапе (docs/methodology.md, раздел 18.1).",
+      "properties": {
+        "stage": {
+          "description": "Название этапа проекта",
+          "title": "Stage",
+          "type": "string"
+        },
+        "employee": {
+          "description": "Имя сотрудника из Firm.team",
+          "title": "Employee",
+          "type": "string"
+        },
+        "hours": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Hours"
+        }
+      },
+      "required": [
+        "stage",
+        "employee",
+        "hours"
+      ],
+      "title": "ActualHours",
+      "type": "object"
+    },
     "ApplicantCategory": {
       "description": "Категория заявителя: от неё зависят цены Казпатента.",
       "enum": [
@@ -714,7 +749,7 @@
     },
     "Project": {
       "additionalProperties": false,
-      "description": "Проект для сметы.\n\nAttributes:\n    name: Название проекта.\n    client: Клиент.\n    description: Краткое описание.\n    pricing: Модель ценообразования.\n    target_margin: Целевая маржа NNE: определяет цену «издержки + маржа»\n        и служит порогом светофора этапов во всех моделях.\n    vat_mode: Указаны ли цены проекта без НДС или включая НДС.\n    stages: Этапы в порядке выполнения; названия уникальны.\n    disbursements: Прямые расходы: пошлины из каталога, затем\n        произвольные расходы (порядок важен для сметы).\n    calc_country: Страна расчёта налога; учитывается только в режиме «Оба».",
+      "description": "Проект для сметы.\n\nAttributes:\n    name: Название проекта.\n    client: Клиент.\n    description: Краткое описание.\n    pricing: Модель ценообразования.\n    target_margin: Целевая маржа NNE: определяет цену «издержки + маржа»\n        и служит порогом светофора этапов во всех моделях.\n    vat_mode: Указаны ли цены проекта без НДС или включая НДС.\n    stages: Этапы в порядке выполнения; названия уникальны.\n    disbursements: Прямые расходы: пошлины из каталога, затем\n        произвольные расходы (порядок важен для сметы).\n    calc_country: Страна расчёта налога; учитывается только в режиме «Оба».\n    actuals: Факт проекта; None — факт не введён. Смету плана не меняет.",
       "properties": {
         "name": {
           "default": "",
@@ -797,9 +832,52 @@
             }
           ],
           "default": null
+        },
+        "actuals": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectActuals"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "Project",
+      "type": "object"
+    },
+    "ProjectActuals": {
+      "additionalProperties": false,
+      "description": "Факт проекта для план–факта (docs/methodology.md, раздел 18).\n\nAttributes:\n    hours: Фактические часы по парам «этап × сотрудник»; пары уникальны.\n        Назначение плана без строки факта считается нулём часов; строка\n        без назначения в плане — работа вне плана.\n    billed: Фактически выставлено клиенту (в режиме НДС проекта); None —\n        по модели цены: почасовая — факт по ставкам, с потолком — не\n        больше потолка, фикс — цена плана.",
+      "properties": {
+        "hours": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ActualHours"
+          },
+          "title": "Hours",
+          "type": "array"
+        },
+        "billed": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Billed"
+        }
+      },
+      "title": "ProjectActuals",
       "type": "object"
     },
     "ProjectRecord": {

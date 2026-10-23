@@ -69,6 +69,9 @@ VALIDATION_MESSAGES: Mapping[str, str] = {
     "model_type": "должно быть объектом",
 }
 VALUE_ERROR_PREFIX = "Value error, "
+# Поля проекта, появившиеся после первой версии схемы: без значения они не
+# пишутся, поэтому файл без факта (фаза 5) читает и приложение фазы 4.
+OMIT_WHEN_EMPTY: tuple[str, ...] = ("actuals",)
 
 
 class ImportResult(CoreModel):
@@ -134,7 +137,12 @@ def dumps(
         rates_quote=workspace.rates_quote,
         projects=tuple(_record_for_export(record) for record in projects),
     )
-    text = json.dumps(profile.model_dump(mode="json"), ensure_ascii=False, indent=2)
+    raw = profile.model_dump(mode="json")
+    for record in raw["projects"]:
+        for field in OMIT_WHEN_EMPTY:
+            if record["project"][field] is None:
+                del record["project"][field]
+    text = json.dumps(raw, ensure_ascii=False, indent=2)
     return (text + "\n").encode(FILE_ENCODING)
 
 
