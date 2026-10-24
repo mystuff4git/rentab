@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 
 class RentabError(Exception):
     """Базовое исключение ядра."""
@@ -17,7 +19,24 @@ class FixedPriceError(RentabError, ValueError):
 
     Наследует ValueError: в v0.3 эта ситуация была ValueError, и вызывающий
     код мог ловить именно его.
+
+    Attributes:
+        target_margin: Целевая маржа m*; None — если сама цель вне [0; 1).
+        tax_rate: Ставка налога, с которой цель недостижима (t, t_min или
+            (1 − κ)·t); None — если сама цель вне [0; 1). По этим полям
+            интерфейс пишет сообщение со своей подписью режима (L-18).
     """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        target_margin: Decimal | None = None,
+        tax_rate: Decimal | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.target_margin = target_margin
+        self.tax_rate = tax_rate
 
 
 class ReferenceDataError(RentabError):

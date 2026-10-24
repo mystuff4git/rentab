@@ -155,6 +155,17 @@ def test_unreachable_margin(terms: object, margin: str, message: str) -> None:
     with pytest.raises(FixedPriceError, match=message) as error:
         cost_plus_price(terms, d(1000), Decimal(margin))  # type: ignore[arg-type]
     assert isinstance(error.value, ValueError)  # совместимость с v0.3
+    # По полям ошибки интерфейс пишет сообщение со своей подписью режима (L-18).
+    assert error.value.target_margin == Decimal(margin)
+    assert error.value.tax_rate is not None
+    assert error.value.target_margin + error.value.tax_rate >= 1
+
+
+def test_margin_outside_unit_interval_has_no_fields() -> None:
+    with pytest.raises(FixedPriceError) as error:
+        cost_plus_price(USN_6, d(1000), d(1))
+    assert error.value.target_margin is None
+    assert error.value.tax_rate is None
 
 
 def test_min_tax_denominator_is_checked() -> None:
