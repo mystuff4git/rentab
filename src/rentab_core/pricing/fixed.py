@@ -29,7 +29,9 @@ def _unreachable(terms: TaxTerms, target_margin: Decimal, rate: Decimal) -> Fixe
     total = (target_margin + rate) * PERCENT
     return FixedPriceError(
         f"Целевая маржа {target_margin * PERCENT:.1f}% недостижима при режиме "
-        f"«{terms.regime_label}»: маржа + ставка налога = {total:.1f}% ≥ 100%."
+        f"«{terms.regime_label}»: маржа + ставка налога = {total:.1f}% ≥ 100%.",
+        target_margin=target_margin,
+        tax_rate=rate,
     )
 
 

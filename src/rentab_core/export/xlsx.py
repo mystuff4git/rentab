@@ -163,7 +163,12 @@ def _autosize_columns(ws: Worksheet, n_cols: int) -> None:
 
 
 def _write_meta(
-    ws: Worksheet, row: int, estimate: Estimate, firm_name: str, issue_date: dt.date
+    ws: Worksheet,
+    row: int,
+    estimate: Estimate,
+    firm_name: str,
+    issue_date: dt.date,
+    regime_label: str,
 ) -> int:
     """Исполнитель, заказчик, дата, режим и пустая строка-разделитель."""
     if firm_name:
@@ -174,8 +179,8 @@ def _write_meta(
         row += 1
     _write_plain(ws, row, 1, f"Дата: {issue_date.strftime(DATE_FORMAT)}")
     row += 1
-    if estimate.regime_label:
-        _write_plain(ws, row, 1, f"Налоговый режим: {estimate.regime_label}")
+    if regime_label:
+        _write_plain(ws, row, 1, f"Налоговый режим: {regime_label}")
         row += 1
     return row + 1
 
@@ -256,7 +261,7 @@ def _write_totals(
 # Лист «Смета»
 # ---------------------------------------------------------------------------
 def _client_sheet_hourly(
-    ws: Worksheet, estimate: Estimate, firm_name: str, issue_date: dt.date
+    ws: Worksheet, estimate: Estimate, firm_name: str, issue_date: dt.date, regime_label: str
 ) -> None:
     symbol = CURRENCY_SYMBOLS[estimate.currency]
     headers = ["№", "Этап", "Исполнитель", "Часы", f"Ставка, {symbol}/ч", f"Стоимость, {symbol}"]
@@ -265,7 +270,7 @@ def _client_sheet_hourly(
     net = _net_factor(estimate)
 
     row = _write_document_header(ws, 1, f"Смета по проекту: {_project_title(estimate)}", n_cols)
-    row = _write_meta(ws, row, estimate, firm_name, issue_date)
+    row = _write_meta(ws, row, estimate, firm_name, issue_date, regime_label)
     row = _write_table_header(ws, row, headers)
     for idx, line in enumerate(estimate.lines, start=1):
         values: list[CellValue] = [
@@ -296,7 +301,7 @@ def _client_sheet_hourly(
 
 
 def _client_sheet_fixed(
-    ws: Worksheet, estimate: Estimate, firm_name: str, issue_date: dt.date
+    ws: Worksheet, estimate: Estimate, firm_name: str, issue_date: dt.date, regime_label: str
 ) -> None:
     symbol = CURRENCY_SYMBOLS[estimate.currency]
     headers = ["№", "Описание", f"Стоимость, {symbol}"]
@@ -304,7 +309,7 @@ def _client_sheet_fixed(
     number_columns = frozenset({3})
 
     row = _write_document_header(ws, 1, f"Смета по проекту: {_project_title(estimate)}", n_cols)
-    row = _write_meta(ws, row, estimate, firm_name, issue_date)
+    row = _write_meta(ws, row, estimate, firm_name, issue_date, regime_label)
     row = _write_table_header(ws, row, headers)
     if estimate.stages:
         for idx, stage in enumerate(estimate.stages, start=1):
@@ -349,7 +354,7 @@ def _pct(value: Decimal) -> float:
     return _rounded(value * PERCENT, PERCENT_QUANTUM)
 
 
-def _internal_sheet(ws: Worksheet, estimate: Estimate) -> None:
+def _internal_sheet(ws: Worksheet, estimate: Estimate, regime_label: str) -> None:
     symbol = CURRENCY_SYMBOLS[estimate.currency]
     rows: list[IndicatorRow] = [
         (f"Выручка за услуги без НДС, {symbol}", _number(estimate.revenue), True),
@@ -372,7 +377,7 @@ def _internal_sheet(ws: Worksheet, estimate: Estimate) -> None:
         (f"Ставка накладных, {symbol}/ч", _number(estimate.overhead_rate), True),
         (f"Средневзвешенная ставка, {symbol}/ч", _number(estimate.blended_rate), True),
         ("Коэффициент рычага", _rounded(estimate.leverage, LEVERAGE_QUANTUM), False),
-        ("Налоговый режим", estimate.regime_label, False),
+        ("Налоговый режим", regime_label, False),
     ]
     row = _write_indicators(ws, "Внутренний расчёт проекта", rows)
     if not estimate.stages:
@@ -419,13 +424,22 @@ def _internal_sheet(ws: Worksheet, estimate: Estimate) -> None:
 # ---------------------------------------------------------------------------
 # Публичный API
 # ---------------------------------------------------------------------------
-def estimate_xlsx(estimate: Estimate, *, firm_name: str = "", issue_date: dt.date) -> bytes:
+def estimate_xlsx(
+    estimate: Estimate,
+    *,
+    firm_name: str = "",
+    issue_date: dt.date,
+    regime_label: str | None = None,
+) -> bytes:
     """Собирает XLSX-смету и возвращает байты файла.
 
     Args:
         estimate: Смета ядра.
         firm_name: Название фирмы-исполнителя для шапки; пустое — строки нет.
         issue_date: Дата составления сметы.
+        regime_label: Подпись налогового режима для сметы; None — подпись ядра
+            (`Estimate.regime_label`, как в v0.3). Интерфейс передаёт свою
+            человекочитаемую подпись (L-18).
 
     Returns:
         Содержимое .xlsx-файла.
@@ -436,11 +450,12 @@ def estimate_xlsx(estimate: Estimate, *, firm_name: str = "", issue_date: dt.dat
     client_sheet.title = CLIENT_SHEET_TITLE
     internal_sheet = workbook.create_sheet(INTERNAL_SHEET_TITLE)
 
+    label = estimate.regime_label if regime_label is None else regime_label
     if isinstance(estimate.pricing, FixedPricing):
-        _client_sheet_fixed(client_sheet, estimate, firm_name, issue_date)
+        _client_sheet_fixed(client_sheet, estimate, firm_name, issue_date, label)
     else:
-        _client_sheet_hourly(client_sheet, estimate, firm_name, issue_date)
-    _internal_sheet(internal_sheet, estimate)
+        _client_sheet_hourly(client_sheet, estimate, firm_name, issue_date, label)
+    _internal_sheet(internal_sheet, estimate, label)
 
     buffer = io.BytesIO()
     workbook.save(buffer)

@@ -1,6 +1,6 @@
 """Приватность (L-10): приложение не пишет на диск и не читает профиль v0.3 само.
 
-Главный тест проходит по всем страницам так, как это сделал бы пользователь,
+Главный тест проходит по всем шагам так, как это сделал бы пользователь,
 и падает, если хоть один байт записан вне временного каталога системы или
 временный файл остался на диске. Временные файлы создаёт openpyxl, собирая
 смету XLSX в памяти, и сразу удаляет. Статическая проверка дополняет его:
@@ -21,10 +21,19 @@ from streamlit.testing.v1 import AppTest
 from rentab_core import fx
 from rentab_core.io import MAX_PROFILE_BYTES
 from tests.app.conftest import APP_DIR
-from tests.app.helpers import click, exported, run_page, slot_ids, switch, upload
+from tests.app.helpers import (
+    HOME,
+    click,
+    exported,
+    open_tab,
+    run_page,
+    slot_ids,
+    switch,
+    upload,
+)
 from tests.app.write_guard import record_writes
 from tests.core.test_fx import CBR, CBR_XML, FakeFetcher
-from ui import state
+from ui import nav, state
 
 ROOT = APP_DIR.parent
 CORE_DIR = ROOT / "src" / "rentab_core"
@@ -35,42 +44,51 @@ BYTES_PER_MB = 1024 * 1024
 
 def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     """Все страницы и все действия с данными: демо, курсы, команда, проекты, аналитика, файлы."""
-    app = run_page("Home.py")
+    app = run_page(HOME)
     click(app, "🎓 Загрузить демо-фирму")
 
-    app.switch_page("pages/01_Настройка.py").run()
+    # Фирма: курсы, новый сотрудник, правка с переименованием, удаление, накладные.
+    app.switch_page(nav.FIRM).run()
     click(app, "⬇️ Загрузить курсы ЦБ РФ")
     app.text_input(key="add_member_name").input("Новый юрист")
     app.number_input(key="add_member_gross_salary").set_value(120_000.0)
     app.run()
     click(app, "➕ Добавить сотрудника")
+    app.button(key="edit_member_1").click().run()
+    app.text_input(key="add_member_name").input("Юрист Петрова")
+    app.number_input(key="add_member_utilization_pct").set_value(70.0)
+    app.run()
+    click(app, "💾 Сохранить изменения")
+    app.button(key="edit_member_3").click().run()
+    click(app, "Отмена")
+    app.button(key="del_member_3").click().run()
     click(app, "📥 Загрузить типовой шаблон")
 
-    app.switch_page("pages/02_Проект.py").run()
+    # Проект: смета считается сразу; проекты — новый, копия, удаление.
+    app.switch_page(nav.PROJECT).run()
     ids = slot_ids(app)
-    click(app, "💰 Рассчитать смету")
     switch(app, ids[1])
-    click(app, "💰 Рассчитать смету")
     click(app, "⧉ Копия")
     click(app, "➕ Новый")
     click(app, "🗑 Удалить проект")
     click(app, "Да, удалить")
 
-    # Дашборд собирает смету XLSX для кнопки «Скачать».
-    app.switch_page("pages/03_Дашборд.py").run()
+    # Результат: смета XLSX для кнопки «Скачать», вкладка «Чувствительность».
+    app.switch_page(nav.RESULT).run()
     switch(app, ids[1])
     assert app.get("download_button")
-
-    # Аналитика: ползунки «что если» и торнадо, матрица сравнения, ввод факта.
-    app.switch_page("pages/04_Чувствительность.py").run()
+    click(app, "Чувствительность")
     app.slider(key=state.WHATIF_HOURS).set_value(50).run()
     app.slider(key=state.TORNADO_PCT).set_value(20).run()
     click(app, "↺ Сбросить «что если»")
-    app.switch_page("pages/05_Сравнение.py").run()
+    open_tab(app, "Смета")
+
+    # Сравнение и план–факт.
+    app.switch_page(nav.COMPARE).run()
     app.number_input(key=state.COMPARE_CAP).set_value(90_000.0).run()
     app.radio(key=state.COMPARE_METRIC).set_value("total_client").run()
     app.checkbox(key=state.COMPARE_ALL_VARIANTS).check().run()
-    app.switch_page("pages/06_План–факт.py").run()
+    app.switch_page(nav.PLAN_FACT).run()
     switch(app, ids[2])
     click(app, "📋 Заполнить факт по плану")
     app.number_input(key="unplanned_hours").set_value(2.0)
@@ -79,9 +97,10 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     app.number_input(key=state.ACTUAL_BILLED).set_value(100_000.0).run()
     assert app.session_state[state.ACTUAL_HOURS]
 
-    app.switch_page("Home.py").run()
+    app.switch_page(HOME).run()
     data = exported(downloads)
     assert b'"actuals"' in data
+    assert "Юрист Петрова".encode() in data
     upload(app, data)
     click(app, "📂 Загрузить данные из файла")
     click(app, "Заменить данные")
@@ -149,8 +168,8 @@ def test_no_profile_autoload(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         path.write_bytes(V03_FIXTURE.read_bytes())
     monkeypatch.chdir(tmp_path)
     with record_writes() as log:
-        app = run_page("Home.py")
-        app.switch_page("pages/01_Настройка.py").run()
+        app = run_page(HOME)
+        app.switch_page(nav.FIRM).run()
     assert not [path for path in log.opened if path.name == "firm_profile.json"]
     assert app.session_state[state.TEAM] == []
     assert len(slot_ids(app)) == 1
@@ -267,3 +286,14 @@ def test_streamlit_config_protects_privacy() -> None:
     config = tomllib.loads(CONFIG.read_text(encoding="utf-8"))
     assert config["browser"]["gatherUsageStats"] is False
     assert config["server"]["maxUploadSize"] * BYTES_PER_MB >= MAX_PROFILE_BYTES
+
+
+def test_static_files_are_theme_fonts_only() -> None:
+    # Раздача app/static включена ради шрифтов темы: там только шрифты и их лицензии.
+    config = tomllib.loads(CONFIG.read_text(encoding="utf-8"))
+    assert config["server"]["enableStaticServing"] is True
+    files = [path for path in (APP_DIR / "static").rglob("*") if path.is_file()]
+    assert files
+    assert {path.suffix for path in files} == {".woff2", ".txt"}
+    for face in config["theme"]["fontFaces"]:
+        assert (APP_DIR / face["url"].removeprefix("app/")).is_file(), face["url"]

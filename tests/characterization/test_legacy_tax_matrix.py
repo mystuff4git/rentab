@@ -155,7 +155,8 @@ def vat_rate(config_id: str) -> float:
 
 
 def test_regime_label_leaks_internal_key() -> None:
-    # KNOWN-BUG L-18 → фаза 6: в подпись режима (UI и смета) попадает ключ объекта УСН.
+    # KNOWN-BUG L-18: в подпись режима v0.3 попадает ключ объекта УСН. Интерфейс и смета
+    # XLSX исправлены в фазе 6; подпись ядра оставлена как в v0.3 (снимки ядра).
     assert run("RF_USN_income", "billing")["regime_label"] == "УСН income (6%)"
     label = run("RF_USN_income_expenses", "billing")["regime_label"]
     assert label == "УСН income_minus_expenses (15%)"

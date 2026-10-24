@@ -13,6 +13,9 @@
 Модели собираются чистыми функциями от словаря значений (`project_record`,
 `project_values`, `firm_values`): их можно проверить без Streamlit, и путь
 «запись → значения → запись» данных не теряет.
+
+Смета не хранится: страницы считают её по текущим значениям проекта
+(`estimate_outcome`), поэтому устаревшей сметы не бывает.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from decimal import Decimal
 from typing import Any, TypeVar, cast
 
 import streamlit as st
+from pydantic import ValidationError
 
 from rentab_core.analysis.plan_fact import actuals_from_plan, plan_pairs
 from rentab_core.analysis.sensitivity import DEFAULT_TORNADO_DEVIATION, WhatIf
@@ -32,6 +36,8 @@ from rentab_core.duties import (
     ApplicantCategory,
     Quantity,
 )
+from rentab_core.errors import CurrencyConversionError, FixedPriceError
+from rentab_core.estimate import calculate_estimate
 from rentab_core.fx import RatesQuote
 from rentab_core.io import DutySelection, ProjectRecord, Workspace
 from rentab_core.models import (
@@ -52,19 +58,24 @@ from rentab_core.models import (
     JurisdictionMode,
     KzOurProfile,
     LegalForm,
+    MonthlyCost,
     NpdProfile,
     OsnoProfile,
     Overhead,
     PricingModel,
     Project,
     ProjectActuals,
+    Role,
+    Salary,
     Scenario,
     Stage,
+    TaxProfile,
     UsnProfile,
     VatMode,
 )
 from rentab_core.money import ONE, PERCENT, Currency, format_number, round_to, to_decimal
 from rentab_core.results import Estimate
+from ui.labels import fixed_price_error
 
 Values = Mapping[str, Any]
 
@@ -88,8 +99,9 @@ CAP_AMOUNT = "cap_amount"
 AGREED_PRICE = "agreed_price"
 VAT_MODE = "vat_mode"
 CALC_COUNTRY = "calc_country_choice"
-ESTIMATE = "estimate"
-# Виджеты юрисдикции на странице «Настройка».
+# Вкладка страницы «Результат»: «Смета» или «Чувствительность».
+RESULT_TAB = "result_tab"
+# Виджеты юрисдикции на шаге «Фирма».
 JURISDICTION_CHOICE = "jurisdiction_choice"
 RF_REGIME = "rf_regime_choice"
 RF_USN_OBJECT = "rf_usn_object"
@@ -139,6 +151,24 @@ TORNADO_PCT = "tornado_pct"
 COMPARE_CAP = "compare_cap"
 COMPARE_METRIC = "compare_metric"
 COMPARE_ALL_VARIANTS = "compare_all_variants"
+# Карточка сотрудника на шаге «Фирма» (добавление и правка).
+MEMBER_NAME = "add_member_name"
+MEMBER_ROLE = "add_member_role"
+MEMBER_BILLING = "add_member_billing"
+MEMBER_CURRENCY = "add_member_currency"
+MEMBER_COMPENSATION = "add_member_compensation"
+MEMBER_GROSS = "add_member_gross_salary"
+MEMBER_RATE_PCT = "add_member_employer_rate_pct"
+MEMBER_MONTHLY = "add_member_monthly_cost"
+MEMBER_HOURS = "add_member_contract_hours"
+MEMBER_UTILIZATION = "add_member_utilization_pct"
+MEMBER_FROM_PROFIT = "add_member_paid_from_profit"
+# Ставку взносов изменили руками: не пересчитывать её по окладу.
+MEMBER_RATE_MANUAL = "add_member_rate_manual"
+# Имя сотрудника, которого правит карточка; нет ключа — карточка добавляет нового.
+EDIT_MEMBER = "edit_member"
+COMPENSATION_SALARY = "salary"
+COMPENSATION_MONTHLY = "monthly"
 # Проекты сессии: слоты, активный проект, счётчик номеров, переключатель.
 PROJECTS = "projects"
 ACTIVE_PROJECT = "active_project"
@@ -153,12 +183,12 @@ PRICING_AGREED = "agreed"
 PRICING_KINDS = (PRICING_HOURLY, PRICING_CAPPED, PRICING_FIXED, PRICING_AGREED)
 
 # Курс «₽ за 1 ₸» по умолчанию — индикативный, как в v0.3; точный курс
-# загружается с сайта ЦБ РФ (НБРК) кнопкой на странице «Настройка» или вводится
+# загружается с сайта ЦБ РФ (НБРК) кнопкой на шаге «Фирма» или вводится
 # вручную. Курс доллара по умолчанию не задан: 0 — «нет курса».
 DEFAULT_RUB_PER_KZT = 0.18
 NO_RATE = 0.0
 DEFAULT_TARGET_MARGIN_PCT = int(DEFAULT_TARGET_MARGIN * PERCENT)
-# Поле и слайдер целевой маржи на странице «Проект», целые проценты
+# Поле и слайдер целевой маржи на шаге «Проект», целые проценты
 # (слайдер — как в v0.3, 02_Проект.py:67–70; поле допускает значения шире).
 TARGET_MARGIN_INPUT_MIN_PCT = 0
 TARGET_MARGIN_INPUT_MAX_PCT = 99
@@ -266,6 +296,7 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
     COMPARE_CAP,
     COMPARE_METRIC,
     COMPARE_ALL_VARIANTS,
+    RESULT_TAB,
 )
 # Префиксы ключей виджетов, которые создаются по стране, единице или фактору.
 PERSISTENT_WIDGET_PREFIXES: tuple[str, ...] = (
@@ -283,12 +314,10 @@ class ProjectSlot:
         id: Номер проекта в сессии («p1», «p2»…), в файл не попадает.
         values: Снимок значений проекта (`PROJECT_KEYS`). У активного проекта
             устарел: его значения — в ключах виджетов.
-        estimate: Последняя рассчитанная смета (у активного — в `ESTIMATE`).
     """
 
     id: str
     values: dict[str, Any]
-    estimate: Estimate | None = None
 
 
 def session() -> Values:
@@ -359,7 +388,7 @@ def selected_duties() -> dict[str, list[str]]:
 
 
 def jurisdiction(values: Values | None = None) -> Jurisdiction | None:
-    """Юрисдикция, выбранная на странице «Настройка»; None — ещё не выбрана."""
+    """Юрисдикция, выбранная на шаге «Фирма»; None — ещё не выбрана."""
     value = _values(values).get(JURISDICTION)
     return value if isinstance(value, Jurisdiction) else None
 
@@ -369,11 +398,6 @@ def home_currency(value: Jurisdiction | None) -> Currency:
     if value is not None and value.mode == JurisdictionMode.KZ:
         return Currency.KZT
     return Currency.RUB
-
-
-def estimate() -> Estimate | None:
-    """Последняя рассчитанная смета активного проекта."""
-    return cast(Estimate | None, st.session_state.get(ESTIMATE))
 
 
 def number(key: str, default: float, values: Values | None = None) -> Decimal:
@@ -396,7 +420,7 @@ def _rate(key: str, default: float, values: Values) -> Decimal | None:
 
 
 def exchange_rates(values: Values | None = None) -> ExchangeRates:
-    """Курсы валют фирмы со страницы «Настройка»."""
+    """Курсы валют фирмы с шага «Фирма»."""
     values = _values(values)
     return ExchangeRates(
         rub_per_kzt=_rate(RUB_PER_KZT, DEFAULT_RUB_PER_KZT, values),
@@ -430,7 +454,7 @@ def firm_facts(values: Values | None = None) -> FirmFacts:
 
 
 def firm(values: Values | None = None) -> Firm:
-    """Фирма из данных страницы «Настройка»."""
+    """Фирма из данных шага «Фирма»."""
     values = _values(values)
     return Firm(
         name=text(FIRM_NAME, values),
@@ -443,7 +467,7 @@ def firm(values: Values | None = None) -> Firm:
 
 
 def normalized_jurisdiction(value: Jurisdiction) -> Jurisdiction:
-    """Юрисдикция такой, какой её соберёт страница «Настройка»: режимы стран заданы явно."""
+    """Юрисдикция такой, какой её соберёт шаг «Фирма»: режимы стран заданы явно."""
     countries = value.countries
     return Jurisdiction(
         mode=value.mode,
@@ -457,7 +481,7 @@ def _optional_float(value: Decimal | None) -> float | None:
 
 
 def firm_values(value: Firm, quote: RatesQuote | None = None) -> dict[str, Any]:
-    """Значения ключей «Настройки» для фирмы и загруженных курсов."""
+    """Значения ключей шага «Фирма» для фирмы и загруженных курсов."""
     jurisdiction_ = normalized_jurisdiction(value.jurisdiction)
     facts = value.facts
     result: dict[str, Any] = {
@@ -493,6 +517,111 @@ def firm_values(value: Firm, quote: RatesQuote | None = None) -> dict[str, Any]:
     if quote is not None:
         result |= {FX_QUOTE: quote, FX_DATE: quote.requested}
     return result
+
+
+# ---------------------------------------------------------------------------
+# Карточка сотрудника
+# ---------------------------------------------------------------------------
+def card_values(employee: Employee) -> dict[str, Any]:
+    """Значения карточки «Фирма → Команда» для правки сотрудника."""
+    result: dict[str, Any] = {
+        MEMBER_NAME: employee.name,
+        MEMBER_ROLE: employee.role,
+        MEMBER_BILLING: float(employee.billing_rate),
+        MEMBER_CURRENCY: employee.currency.value,
+        MEMBER_HOURS: float(employee.contract_hours_per_month),
+        MEMBER_UTILIZATION: float(employee.target_utilization * PERCENT),
+        MEMBER_FROM_PROFIT: employee.paid_from_profit,
+        MEMBER_GROSS: 0.0,
+        MEMBER_MONTHLY: 0.0,
+    }
+    compensation = employee.compensation
+    if isinstance(compensation, Salary):
+        result |= {
+            MEMBER_COMPENSATION: COMPENSATION_SALARY,
+            MEMBER_GROSS: float(compensation.gross_salary),
+            MEMBER_RATE_PCT: float(compensation.employer_contribution_rate * PERCENT),
+        }
+    else:
+        result[MEMBER_COMPENSATION] = COMPENSATION_MONTHLY
+        result[MEMBER_MONTHLY] = float(compensation.amount)
+    return result
+
+
+def card_employee(values: Values | None = None) -> Employee:
+    """Сотрудник из значений карточки (имя без пробелов по краям; не проверяется на пустоту).
+
+    Raises:
+        pydantic.ValidationError: Значения вне допустимых границ.
+    """
+    values = _values(values)
+    compensation: Salary | MonthlyCost
+    if values.get(MEMBER_COMPENSATION) == COMPENSATION_MONTHLY:
+        compensation = MonthlyCost(amount=number(MEMBER_MONTHLY, 0.0, values))
+    else:
+        compensation = Salary(
+            gross_salary=number(MEMBER_GROSS, 0.0, values),
+            employer_contribution_rate=number(MEMBER_RATE_PCT, 0.0, values) / PERCENT,
+        )
+    return Employee(
+        name=text(MEMBER_NAME, values).strip(),
+        role=Role(values.get(MEMBER_ROLE, Role.PARTNER)),
+        compensation=compensation,
+        currency=Currency(values.get(MEMBER_CURRENCY, Currency.RUB.value)),
+        billing_rate=number(MEMBER_BILLING, 0.0, values),
+        contract_hours_per_month=number(MEMBER_HOURS, 0.0, values),
+        target_utilization=number(MEMBER_UTILIZATION, 0.0, values) / PERCENT,
+        paid_from_profit=bool(values.get(MEMBER_FROM_PROFIT, False)),
+    )
+
+
+def rename_in_project(values: Values, old: str, new: str) -> dict[str, Any]:
+    """Назначения и факт проекта с новым именем сотрудника (только изменённые ключи)."""
+    result: dict[str, Any] = {}
+    stages_ = cast(list[Stage] | None, values.get(PROJECT_STAGES))
+    if stages_:
+        result[PROJECT_STAGES] = [
+            stage.model_copy(
+                update={
+                    "assignments": tuple(
+                        item.model_copy(update={"employee": new}) if item.employee == old else item
+                        for item in stage.assignments
+                    )
+                }
+            )
+            for stage in stages_
+        ]
+    rows = cast(list[ActualHours] | None, values.get(ACTUAL_HOURS))
+    if rows:
+        result[ACTUAL_HOURS] = [
+            row.model_copy(update={"employee": new}) if row.employee == old else row for row in rows
+        ]
+    return result
+
+
+def names_in_use() -> set[str]:
+    """Имена сотрудников команды и исполнителей во всех проектах сессии."""
+    names = {member.name for member in team()}
+    for slot in projects():
+        values = slot_values(slot)
+        names |= {
+            item.employee
+            for stage in cast(list[Stage], values.get(PROJECT_STAGES) or [])
+            for item in stage.assignments
+        }
+        names |= {row.employee for row in cast(list[ActualHours], values.get(ACTUAL_HOURS) or [])}
+    return names
+
+
+def rename_employee(old: str, new: str) -> None:
+    """Колбэк-помощник: новое имя сотрудника — в назначениях и факте всех проектов сессии."""
+    for slot in projects():
+        if slot.id == active_id():
+            for key, value in rename_in_project(session(), old, new).items():
+                st.session_state[key] = value
+        else:
+            slot.values.update(rename_in_project(slot.values, old, new))
+    _renew_actuals_editor()
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +680,7 @@ def pricing_kind(values: Values | None = None) -> str:
 
 
 def pricing(values: Values | None = None) -> PricingModel:
-    """Модель ценообразования из данных страницы «Проект».
+    """Модель ценообразования из данных шага «Проект».
 
     Raises:
         pydantic.ValidationError: Потолок или согласованная цена не заданы (0).
@@ -644,7 +773,7 @@ def slider_pct(pct: int) -> int:
 
 
 def duty_multiselect_key(country: Country) -> str:
-    """Ключ списка выбранных пошлин страны на странице «Проект»."""
+    """Ключ списка выбранных пошлин страны на шаге «Проект»."""
     return f"{DUTY_MULTISELECT_PREFIX}{country.value}"
 
 
@@ -758,13 +887,24 @@ def compare_cap(values: Values | None = None) -> Decimal | None:
 # ---------------------------------------------------------------------------
 # План–факт
 # ---------------------------------------------------------------------------
-# Столбцы редактора факта.
+# Столбцы редактора факта. На экране — подпись пары, план и факт (узкий экран
+# без горизонтальной прокрутки); этап, исполнитель и отметка — скрытые столбцы.
+ACTUALS_LABEL = "Исполнитель · этап"
 ACTUALS_STAGE = "Этап"
 ACTUALS_EMPLOYEE = "Исполнитель"
 ACTUALS_PLAN = "План, ч"
 ACTUALS_FACT = "Факт, ч"
 ACTUALS_NOTE = "Отметка"
 UNPLANNED_NOTE = "вне плана"
+ACTUALS_COLUMNS = (
+    ACTUALS_LABEL,
+    ACTUALS_STAGE,
+    ACTUALS_EMPLOYEE,
+    ACTUALS_PLAN,
+    ACTUALS_FACT,
+    ACTUALS_NOTE,
+)
+ACTUALS_VISIBLE = (ACTUALS_LABEL, ACTUALS_PLAN, ACTUALS_FACT)
 
 
 def actuals() -> list[ActualHours] | None:
@@ -796,13 +936,16 @@ def actuals_rows(stages_: list[Stage], rows: list[ActualHours]) -> list[dict[str
         keys += [key for key in fact if key[0] == stage.name and key not in plan]
         for key in keys:
             hours = fact.get(key)
+            note = "" if key in plan else UNPLANNED_NOTE
             result.append(
                 {
+                    # Исполнитель — первым: на узком экране конец подписи обрезается.
+                    ACTUALS_LABEL: " · ".join(part for part in (key[1], key[0], note) if part),
                     ACTUALS_STAGE: key[0],
                     ACTUALS_EMPLOYEE: key[1],
                     ACTUALS_PLAN: float(plan.get(key, 0)),
                     ACTUALS_FACT: None if hours is None else float(hours),
-                    ACTUALS_NOTE: "" if key in plan else UNPLANNED_NOTE,
+                    ACTUALS_NOTE: note,
                 }
             )
     return result
@@ -917,9 +1060,44 @@ def slot_values(slot: ProjectSlot) -> Values:
     return session() if slot.id == active_id() else slot.values
 
 
-def slot_estimate(slot: ProjectSlot) -> Estimate | None:
-    """Последняя смета проекта."""
-    return estimate() if slot.id == active_id() else slot.estimate
+def slot_scenario(slot: ProjectSlot) -> Scenario:
+    """Вход расчёта сметы проекта сессии.
+
+    Raises:
+        pydantic.ValidationError: Потолок или согласованная цена не заданы (0).
+    """
+    return project_record(slot_values(slot)).scenario(firm())
+
+
+PRICE_MISSING = "Укажите потолок или согласованную цену больше нуля на шаге «Проект»."
+
+
+def calc_profile(scenario: Scenario) -> TaxProfile:
+    """Налоговый режим, по которому считается смета проекта."""
+    jurisdiction_ = scenario.firm.jurisdiction
+    return jurisdiction_.tax_profile(jurisdiction_.calc_country(scenario.project.calc_country))
+
+
+def estimate_error(exc: Exception, scenario: Scenario) -> str:
+    """Сообщение интерфейса об ошибке расчёта сметы."""
+    if isinstance(exc, FixedPriceError):
+        return (
+            "Не удалось рассчитать фиксированную цену: "
+            f"{fixed_price_error(exc, calc_profile(scenario))}"
+        )
+    return f"{exc}. Курсы задаются на шаге «Фирма»."
+
+
+def estimate_outcome(build: Callable[[], Scenario]) -> Estimate | str:
+    """Смета по текущим данным или причина, по которой её нельзя посчитать."""
+    try:
+        scenario_ = build()
+    except ValidationError:
+        return PRICE_MISSING
+    try:
+        return calculate_estimate(scenario_)
+    except (FixedPriceError, CurrencyConversionError) as exc:
+        return estimate_error(exc, scenario_)
 
 
 def slot_title(slot_id: str) -> str:
@@ -931,10 +1109,8 @@ def slot_title(slot_id: str) -> str:
 
 
 def _stash_active() -> None:
-    """Сохраняет значения и смету активного проекта в его слот."""
-    slot = _slot(active_id())
-    slot.values = snapshot(session())
-    slot.estimate = estimate()
+    """Сохраняет значения активного проекта в его слот."""
+    _slot(active_id()).values = snapshot(session())
 
 
 def _clear(keys_filter: Callable[[str], bool]) -> None:
@@ -959,10 +1135,6 @@ def _load(slot: ProjectSlot) -> None:
     for key, value in full_values(slot.values).items():
         st.session_state[key] = value
     _renew_actuals_editor()
-    if slot.estimate is None:
-        st.session_state.pop(ESTIMATE, None)
-    else:
-        st.session_state[ESTIMATE] = slot.estimate
     st.session_state[ACTIVE_PROJECT] = slot.id
     st.session_state[PROJECT_SWITCH] = slot.id
     init_defaults()
@@ -991,7 +1163,7 @@ def new_project() -> None:
 
 
 def duplicate_project() -> None:
-    """Колбэк: копия активного проекта без сметы."""
+    """Колбэк: копия активного проекта."""
     values = snapshot(session())
     values[PROJECT_NAME] = text(PROJECT_NAME).strip() + COPY_SUFFIX
     _add(values)
@@ -1037,7 +1209,7 @@ def apply_workspace(value: Workspace) -> list[str]:
     """
     notes: list[str] = []
     _clear(lambda key: key in FIRM_KEYS or _is_project_key(key))
-    for key in (PROJECTS, ACTIVE_PROJECT, ESTIMATE):
+    for key in (PROJECTS, ACTIVE_PROJECT):
         st.session_state.pop(key, None)
     for key, item in firm_values(value.firm, value.rates_quote).items():
         st.session_state[key] = item

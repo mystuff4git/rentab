@@ -49,7 +49,9 @@ def terms(profile: UsnProfile | AusnProfile | OsnoProfile | NpdProfile) -> TaxTe
         case UsnProfile():
             income_rate = _rate(USN_RATE_KEYS[profile.tax_object])
             vat_rate = _rate(USN_VAT_KEYS[profile.vat]) if profile.vat != UsnVat.NONE else ZERO
-            # KNOWN-BUG L-18 → фаза 6: в подпись попадает ключ объекта («УСН income (6%)»).
+            # L-18: подпись ядра — как в v0.3, с ключом объекта («УСН income (6%)»): она
+            # в снимках ядра и в мосте «было/стало». Интерфейс и смета XLSX (фаза 6)
+            # показывают свою подпись: ui.labels.regime_label, estimate_xlsx(regime_label=).
             label = f"УСН {profile.tax_object.value} ({percent(income_rate)}%)"
             if vat_rate > 0:
                 label += f" + НДС {percent(vat_rate)}%"

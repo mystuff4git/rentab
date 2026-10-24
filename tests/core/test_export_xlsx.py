@@ -129,3 +129,20 @@ def test_fixed_estimate_without_stages_has_single_service_row() -> None:
     book = sheets(calculate_estimate(scenario))
     assert [1, "Услуги по проекту (фиксированная стоимость)", 100_000] in book["Смета"]
     assert ["Анализ этапов"] not in book["Внутренний расчёт"]
+
+
+def test_regime_label_can_be_given_by_interface() -> None:
+    # L-18: интерфейс передаёт свою подпись режима; без неё — подпись ядра, как в v0.3.
+    estimate = calculate_estimate(basic_scenario())
+    default = labels(sheets(estimate)["Смета"])
+    assert f"Налоговый режим: {estimate.regime_label}" in default
+    workbook = load_workbook(
+        io.BytesIO(
+            estimate_xlsx(estimate, issue_date=ISSUE_DATE, regime_label="УСН «доходы» 6% без НДС")
+        )
+    )
+    client = [cell.value for row in workbook["Смета"].iter_rows() for cell in row]
+    internal = [cell.value for row in workbook["Внутренний расчёт"].iter_rows() for cell in row]
+    assert "Налоговый режим: УСН «доходы» 6% без НДС" in client
+    assert "УСН «доходы» 6% без НДС" in internal
+    assert estimate.regime_label not in internal

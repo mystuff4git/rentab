@@ -1,11 +1,13 @@
-"""Страница 01: настройка фирмы (страница v0.3 на ядре, методология фаз 2–3).
+"""Шаг 1 «Фирма»: юрисдикция и налоги, команда, накладные.
 
 Три вкладки: юрисдикция, налоги, применимость режима и курсы; команда;
 накладные фирмы. Ставки в подписях берутся из реестра ядра. Себестоимость
 часа не вводится, а считается ядром: c = W / (H × u) (docs/methodology.md,
 раздел 3); ставка взносов подставляется по окладу и тарифу (раздел 3.1.1).
-Сохранения профиля на диск, как в v0.3, нет: данные живут только в сессии
-(L-10); в файл JSON их выгружает и загружает сам пользователь на главной.
+Сотрудника можно изменить: карточка заполняется его данными, а новое имя
+переходит в назначения и факт всех проектов сессии. Сохранения профиля на
+диск, как в v0.3, нет: данные живут только в сессии (L-10); в файл JSON их
+выгружает и загружает сам пользователь на главной.
 """
 
 from __future__ import annotations
@@ -30,7 +32,6 @@ from rentab_core.models import (
     DEFAULT_TARGET_UTILIZATION,
     ROLE_LABELS,
     AusnProfile,
-    Compensation,
     Country,
     Employee,
     Firm,
@@ -40,7 +41,6 @@ from rentab_core.models import (
     KzOurProfile,
     KzVat,
     LegalForm,
-    MonthlyCost,
     NpdClientType,
     NpdProfile,
     OsnoProfile,
@@ -48,7 +48,6 @@ from rentab_core.models import (
     Period,
     RfTaxProfile,
     Role,
-    Salary,
     SocialContributions,
     UsnObject,
     UsnProfile,
@@ -58,16 +57,20 @@ from rentab_core.models import (
 from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, ZERO, Currency, decimal_sum, to_decimal
 from rentab_core.tax import ContributionBreakdown, employer_contributions
 from rentab_core.tax.eligibility import Severity, check_firm
-from ui import state
+from ui import formulas, nav, state
+from ui.components import Kpi, empty_state, kpi_grid
 from ui.labels import (
     COMPENSATION_LABELS,
     JURISDICTION_LABELS,
     LEGAL_FORM_LABELS,
     RF_REGIME_LABELS,
     SEVERITY_ICONS,
+    hours_label,
     kz_form_label,
     money,
+    money_rate,
     npd_client_label,
+    pct_label,
     registry_amount,
     rf_rate_pct,
     social_contributions_label,
@@ -76,8 +79,10 @@ from ui.labels import (
 )
 
 DEFAULT_UTILIZATION_PCT = float(DEFAULT_TARGET_UTILIZATION * PERCENT)
-# Ставка взносов в карточке сотрудника введена вручную: не пересчитывать её по окладу.
-MEMBER_RATE_MANUAL = "add_member_rate_manual"
+MEMBER_RATE_MANUAL = state.MEMBER_RATE_MANUAL
+# Ставка взносов в карточке совпадает с расчётной, если разница меньше этого, п. п.
+RATE_MATCH_PCT = 0.005
+MEMBER_MESSAGE = "add_member_message"
 
 # Типовые статьи накладных («Загрузить типовой шаблон», data/firm_expenses.json v0.3).
 OVERHEAD_TEMPLATE: tuple[str, ...] = (
@@ -98,21 +103,13 @@ OVERHEADS_EDITOR = state.OVERHEADS_EDITOR
 OVERHEADS_EDITOR_BASE = state.OVERHEADS_EDITOR_BASE
 OVERHEAD_COLUMNS = ["Название", "Сумма", "Период", "Валюта"]
 
-state.init_defaults()
-state.persist_widgets()
-
-st.title("⚙️ Настройка среды")
-st.caption("Заполните три вкладки: юрисдикция, команда, накладные фирмы.")
-st.info(
-    "Данные фирмы хранятся только в этой сессии и не сохраняются на сервере. "
-    "Сохранить их в файл JSON и загрузить обратно (или открыть демо-фирму) можно "
-    "на главной странице.",
-    icon="🔒",
+st.title("Фирма")
+st.caption(
+    "Шаг 1: юрисдикция и налоговый режим, команда с утилизацией, накладные фирмы. "
+    "Данные хранятся только в этой сессии; сохранить их в файл можно на главной."
 )
 
-tab_jur, tab_team, tab_exp = st.tabs(
-    ["🏛️ Юрисдикция, налоги, курсы", "👥 Команда", "🧾 Расходы фирмы"]
-)
+tab_jur, tab_team, tab_exp = st.tabs(["Юрисдикция и налоги", "Команда", "Накладные"])
 
 # ===========================================================================
 # ВКЛАДКА 1 — ЮРИСДИКЦИЯ И НАЛОГИ
@@ -132,7 +129,7 @@ with tab_jur:
 
     rf_profile: RfTaxProfile | None = None
     if mode in (JurisdictionMode.RF, JurisdictionMode.BOTH):
-        st.markdown("### 🇷🇺 Параметры РФ")
+        st.markdown("#### 🇷🇺 Параметры РФ")
         rf_regime = (
             st.radio(
                 "Налоговый режим (РФ)",
@@ -215,7 +212,7 @@ with tab_jur:
 
     kz_profile: KzOurProfile | None = None
     if mode in (JurisdictionMode.KZ, JurisdictionMode.BOTH):
-        st.markdown("### 🇰🇿 Параметры РК (ОУР)")
+        st.markdown("#### 🇰🇿 Параметры РК (ОУР)")
         col_form, col_kz_vat = st.columns(2)
         with col_form:
             kz_form = (
@@ -244,7 +241,7 @@ with tab_jur:
     jurisdiction = Jurisdiction(mode=mode, rf=rf_profile, kz=kz_profile)
     st.session_state[state.JURISDICTION] = jurisdiction
 
-    st.markdown("### ✅ Применимость режима")
+    st.markdown("#### Применимость режима")
     st.caption(
         "Лимиты дохода и штата, запреты НПД, обязательный НДС. Расчёт сметы проверка "
         "не останавливает. Пустое поле — значение не задано, проверка по нему пропускается."
@@ -306,7 +303,7 @@ with tab_jur:
         else:
             st.info(text)
 
-    st.markdown("### 💱 Курсы валют")
+    st.markdown("#### Курсы валют")
     st.caption(
         "Суммы в другой валюте (оклады, накладные, пошлины) пересчитываются в валюту "
         "проекта по этим курсам. Загрузите официальные курсы ЦБ РФ (если ЦБ недоступен — "
@@ -362,9 +359,6 @@ with tab_jur:
             help="Нужен, если есть накладные или расходы в долларах.",
         )
 
-    with st.expander("Текущие настройки", expanded=False):
-        st.json(jurisdiction.model_dump(mode="json"))
-
 
 # ===========================================================================
 # ВКЛАДКА 2 — КОМАНДА
@@ -381,28 +375,36 @@ with tab_team:
     jurisdiction_now = state.jurisdiction()
     home = state.home_currency(jurisdiction_now)
 
-    # Поля карточки «Добавить сотрудника». Значения задаются до виджетов, чтобы
-    # колбэки могли очищать карточку (менять ключ виджета после его создания нельзя).
+    # Поля карточки сотрудника. Значения задаются до виджетов, чтобы колбэки могли
+    # очищать и заполнять карточку (менять ключ виджета после его создания нельзя).
     member_defaults: dict[str, object] = {
-        "add_member_name": "",
-        "add_member_billing": 0.0,
-        "add_member_currency": home.value,
-        "add_member_compensation": "salary",
-        "add_member_gross_salary": 0.0,
-        "add_member_employer_rate_pct": 0.0,
-        "add_member_monthly_cost": 0.0,
-        "add_member_contract_hours": float(DEFAULT_CONTRACT_HOURS_PER_MONTH),
-        "add_member_utilization_pct": DEFAULT_UTILIZATION_PCT,
-        "add_member_paid_from_profit": False,
+        state.MEMBER_NAME: "",
+        state.MEMBER_ROLE: next(iter(Role)),
+        state.MEMBER_BILLING: 0.0,
+        state.MEMBER_CURRENCY: home.value,
+        state.MEMBER_COMPENSATION: state.COMPENSATION_SALARY,
+        state.MEMBER_GROSS: 0.0,
+        state.MEMBER_RATE_PCT: 0.0,
+        state.MEMBER_MONTHLY: 0.0,
+        state.MEMBER_HOURS: float(DEFAULT_CONTRACT_HOURS_PER_MONTH),
+        state.MEMBER_UTILIZATION: DEFAULT_UTILIZATION_PCT,
+        state.MEMBER_FROM_PROFIT: False,
     }
     for key, default in member_defaults.items():
         st.session_state.setdefault(key, default)
 
+    def contributions_for(gross: float, currency: Currency) -> ContributionBreakdown:
+        """Взносы работодателя за год с оклада по стране трудоустройства."""
+        return employer_contributions(
+            to_decimal(gross), jurisdiction_now, employment_country(currency)
+        )
+
     def card_contributions() -> ContributionBreakdown:
-        """Взносы работодателя за год с оклада из карточки по стране трудоустройства."""
-        currency = Currency(st.session_state["add_member_currency"])
-        gross = to_decimal(float(st.session_state["add_member_gross_salary"]))
-        return employer_contributions(gross, jurisdiction_now, employment_country(currency))
+        """Взносы работодателя с оклада из карточки."""
+        return contributions_for(
+            float(st.session_state[state.MEMBER_GROSS]),
+            Currency(st.session_state[state.MEMBER_CURRENCY]),
+        )
 
     def mark_rate_manual() -> None:
         """Колбэк: ставку взносов изменили руками — больше не пересчитывать её."""
@@ -412,77 +414,162 @@ with tab_team:
         """Колбэк: вернуть ставку взносов по расчёту."""
         st.session_state[MEMBER_RATE_MANUAL] = False
 
+    def reset_card() -> None:
+        """Колбэк-помощник: пустая карточка нового сотрудника."""
+        for key, value in member_defaults.items():
+            st.session_state[key] = value
+        st.session_state[MEMBER_RATE_MANUAL] = False
+        st.session_state.pop(state.EDIT_MEMBER, None)
+
+    def start_edit(index: int) -> None:
+        """Колбэк ✏️: карточка заполняется данными сотрудника."""
+        member = state.team()[index]
+        for key, value in state.card_values(member).items():
+            st.session_state[key] = value
+        manual = False
+        if st.session_state[state.MEMBER_COMPENSATION] == state.COMPENSATION_SALARY:
+            computed = contributions_for(
+                float(st.session_state[state.MEMBER_GROSS]), member.currency
+            ).effective_rate
+            entered = float(st.session_state[state.MEMBER_RATE_PCT])
+            manual = abs(entered - float(computed * PERCENT)) > RATE_MATCH_PCT
+        st.session_state[MEMBER_RATE_MANUAL] = manual
+        st.session_state[state.EDIT_MEMBER] = member.name
+        st.session_state.pop(MEMBER_MESSAGE, None)
+
+    def cancel_edit() -> None:
+        """Колбэк «Отмена»: карточка снова добавляет нового сотрудника."""
+        reset_card()
+
+    def card_employee_or_error() -> Employee | None:
+        """Сотрудник из карточки или None с сообщением об ошибке."""
+        if not str(st.session_state[state.MEMBER_NAME]).strip():
+            st.session_state[MEMBER_MESSAGE] = ("error", "Имя не может быть пустым.")
+            return None
+        try:
+            return state.card_employee()
+        except ValidationError as exc:
+            st.session_state[MEMBER_MESSAGE] = ("error", f"Проверьте поля: {exc}")
+            return None
+
+    def add_member() -> None:
+        """Колбэк: добавляет сотрудника и очищает карточку."""
+        employee = card_employee_or_error()
+        if employee is None:
+            return
+        if employee.name in {member.name for member in state.team()}:
+            st.session_state[MEMBER_MESSAGE] = (
+                "error",
+                f"Сотрудник «{employee.name}» уже есть в команде: этапы ссылаются на "
+                "исполнителя по имени.",
+            )
+            return
+        state.team().append(employee)
+        reset_card()
+        st.session_state[MEMBER_MESSAGE] = ("success", f"Добавлен(а): {employee.name}")
+
+    def save_member() -> None:
+        """Колбэк: сохраняет правку сотрудника; новое имя — во всех проектах сессии."""
+        employee = card_employee_or_error()
+        if employee is None:
+            return
+        original = str(st.session_state.get(state.EDIT_MEMBER, ""))
+        team_now = state.team()
+        index = next((i for i, member in enumerate(team_now) if member.name == original), None)
+        if index is None:
+            st.session_state[MEMBER_MESSAGE] = ("error", f"Сотрудника «{original}» уже нет.")
+            reset_card()
+            return
+        renamed = employee.name != original
+        if renamed and employee.name in state.names_in_use():
+            st.session_state[MEMBER_MESSAGE] = (
+                "error",
+                f"Имя «{employee.name}» уже есть в команде или в проектах сессии.",
+            )
+            return
+        team_now[index] = employee
+        if renamed:
+            state.rename_employee(original, employee.name)
+        reset_card()
+        note = " Новое имя — в этапах и факте всех проектов сессии." if renamed else ""
+        st.session_state[MEMBER_MESSAGE] = ("success", f"Сохранено: {employee.name}.{note}")
+
+    def delete_member(index: int) -> None:
+        """Колбэк 🗑: удалить сотрудника (его назначения останутся «нет в команде»)."""
+        team_now = state.team()
+        if st.session_state.get(state.EDIT_MEMBER) == team_now[index].name:
+            reset_card()
+        removed = team_now.pop(index)
+        st.session_state[MEMBER_MESSAGE] = ("success", f"Удалён(а): {removed.name}")
+
     # Ставка взносов по умолчанию — эффективная для оклада, страны и тарифа
     # (раздел 3.1.1). Пересчитывается до создания виджета, пока её не изменили руками.
     breakdown = card_contributions()
     if not st.session_state.get(MEMBER_RATE_MANUAL):
-        st.session_state["add_member_employer_rate_pct"] = round(
+        st.session_state[state.MEMBER_RATE_PCT] = round(
             float(breakdown.effective_rate * PERCENT), 2
         )
 
-    def form_compensation() -> Compensation:
-        """Полная стоимость сотрудника из карточки."""
-        if st.session_state["add_member_compensation"] == "monthly":
-            return MonthlyCost(
-                amount=to_decimal(float(st.session_state["add_member_monthly_cost"]))
+    editing = st.session_state.get(state.EDIT_MEMBER)
+    team_list = state.team()
+    st.markdown("#### Текущая команда")
+    if not team_list:
+        empty_state(
+            "team",
+            "👥",
+            "Команда пока пуста",
+            "Добавьте первого сотрудника в карточке ниже — расчёт начинается с себестоимости "
+            "его часа. Или загрузите демо-фирму на главной.",
+        )
+    for idx, member in enumerate(team_list):
+        cost = employee_cost(member)
+        sym = CURRENCY_SYMBOLS[member.currency]
+        profit_mark = " · из прибыли" if member.paid_from_profit else ""
+        current = " · ✏️ в карточке" if member.name == editing else ""
+        with st.container(border=True, key=f"member-{idx}"):
+            col_info, col_actions = st.columns([6, 1], vertical_alignment="center")
+            role = ROLE_LABELS[member.role]
+            col_info.markdown(f"**{member.name}** · {role}{profit_mark}{current}")
+            col_info.caption(
+                f"Ставка {money_rate(member.billing_rate, sym)} · в месяц "
+                f"{money(cost.monthly_cost, sym)} · контрактный час "
+                f"{money_rate(cost.contract_cost_rate, sym)} · биллируемый час "
+                f"{money_rate(cost.cost_rate, sym)} · утилизация "
+                f"{pct_label(member.target_utilization, to_decimal('0.1'))}"
             )
-        return Salary(
-            gross_salary=to_decimal(float(st.session_state["add_member_gross_salary"])),
-            employer_contribution_rate=(
-                to_decimal(float(st.session_state["add_member_employer_rate_pct"])) / PERCENT
-            ),
+            with col_actions, st.container(horizontal=True, horizontal_alignment="right"):
+                st.button(
+                    "",
+                    icon=":material/edit:",
+                    key=f"edit_member_{idx}",
+                    help="Изменить",
+                    on_click=start_edit,
+                    args=(idx,),
+                )
+                st.button(
+                    "",
+                    icon=":material/delete:",
+                    key=f"del_member_{idx}",
+                    help="Удалить",
+                    on_click=delete_member,
+                    args=(idx,),
+                )
+    if team_list:
+        st.caption(
+            f"Всего: {len(team_list)} · «биллируемый час» — себестоимость биллируемого часа, "
+            "она идёт в расчёт проекта."
         )
 
-    def form_employee() -> Employee:
-        """Сотрудник из карточки (без проверки имени)."""
-        return Employee(
-            name=str(st.session_state["add_member_name"]).strip(),
-            role=st.session_state["add_member_role"],
-            compensation=form_compensation(),
-            currency=Currency(st.session_state["add_member_currency"]),
-            billing_rate=to_decimal(float(st.session_state["add_member_billing"])),
-            contract_hours_per_month=to_decimal(
-                float(st.session_state["add_member_contract_hours"])
-            ),
-            target_utilization=(
-                to_decimal(float(st.session_state["add_member_utilization_pct"])) / PERCENT
-            ),
-            paid_from_profit=bool(st.session_state["add_member_paid_from_profit"]),
-        )
-
-    def add_member() -> None:
-        """Колбэк: добавляет сотрудника и очищает карточку."""
-        name = str(st.session_state["add_member_name"]).strip()
-        if not name:
-            st.session_state["add_member_message"] = ("error", "Имя не может быть пустым.")
-            return
-        try:
-            employee = form_employee()
-        except ValidationError as exc:
-            st.session_state["add_member_message"] = ("error", f"Проверьте поля: {exc}")
-            return
-        state.team().append(employee)
-        st.session_state["add_member_message"] = ("success", f"Добавлен(а): {name}")
-        for key in (
-            "add_member_name",
-            "add_member_billing",
-            "add_member_gross_salary",
-            "add_member_monthly_cost",
-            "add_member_paid_from_profit",
-        ):
-            st.session_state[key] = member_defaults[key]
-        st.session_state[MEMBER_RATE_MANUAL] = False
-
-    st.markdown("### Добавить сотрудника")
+    st.markdown(f"#### Изменить сотрудника «{editing}»" if editing else "#### Добавить сотрудника")
     col_name, col_role = st.columns([2, 1])
     with col_name:
-        st.text_input("Имя / ФИО", placeholder="Иванов И.", key="add_member_name")
+        st.text_input("Имя / ФИО", placeholder="Иванов И.", key=state.MEMBER_NAME)
     with col_role:
         st.selectbox(
             "Роль",
             options=list(Role),
             format_func=lambda r: ROLE_LABELS[r],
-            key="add_member_role",
+            key=state.MEMBER_ROLE,
         )
 
     col_bill, col_cur = st.columns([2, 1])
@@ -492,37 +579,37 @@ with tab_team:
             min_value=0.0,
             step=500.0,
             format="%.0f",
-            key="add_member_billing",
+            key=state.MEMBER_BILLING,
         )
     with col_cur:
         st.selectbox(
             "Валюта оклада и ставки",
             options=[Currency.RUB.value, Currency.KZT.value],
             format_func=lambda c: f"{c} ({CURRENCY_SYMBOLS[Currency(c)]})",
-            key="add_member_currency",
+            key=state.MEMBER_CURRENCY,
             help="В режиме «Оба» — валюта страны, где работает сотрудник.",
         )
 
     with st.container(border=True):
-        st.markdown("**🧮 Полная стоимость сотрудника в месяц**")
+        st.markdown("**Полная стоимость сотрудника в месяц**")
         st.radio(
             "Как задать",
             options=list(COMPENSATION_LABELS),
             format_func=lambda k: COMPENSATION_LABELS[k],
             horizontal=True,
-            key="add_member_compensation",
+            key=state.MEMBER_COMPENSATION,
             help=(
                 "Нормативное вознаграждение партнёра (по Майстеру) — рыночная цена "
                 "его труда. Оно отделяет оплату труда партнёра от прибыли фирмы."
             ),
         )
-        if st.session_state["add_member_compensation"] == "monthly":
+        if st.session_state[state.MEMBER_COMPENSATION] == state.COMPENSATION_MONTHLY:
             st.number_input(
                 "Сумма в месяц",
                 min_value=0.0,
                 step=10_000.0,
                 format="%.0f",
-                key="add_member_monthly_cost",
+                key=state.MEMBER_MONTHLY,
             )
         else:
             col_gs, col_er = st.columns(2)
@@ -532,7 +619,7 @@ with tab_team:
                     min_value=0.0,
                     step=10_000.0,
                     format="%.0f",
-                    key="add_member_gross_salary",
+                    key=state.MEMBER_GROSS,
                     help="Оклад до вычетов (gross).",
                 )
             with col_er:
@@ -542,14 +629,14 @@ with tab_team:
                     max_value=100.0,
                     step=0.5,
                     format="%.2f",
-                    key="add_member_employer_rate_pct",
+                    key=state.MEMBER_RATE_PCT,
                     on_change=mark_rate_manual,
                     help=(
                         "Эффективная ставка за год: с предельной базой и тарифом страны "
                         "трудоустройства. Можно переопределить."
                     ),
                 )
-            sym_card = CURRENCY_SYMBOLS[Currency(st.session_state["add_member_currency"])]
+            sym_card = CURRENCY_SYMBOLS[Currency(st.session_state[state.MEMBER_CURRENCY])]
             if st.session_state.get(MEMBER_RATE_MANUAL):
                 st.caption("Ставка взносов введена вручную.")
                 st.button("↺ Ставка по расчёту", on_click=reset_rate_manual, key="btn_rate_auto")
@@ -567,7 +654,7 @@ with tab_team:
                 )
         st.checkbox(
             "Вознаграждение выплачивается из прибыли",
-            key="add_member_paid_from_profit",
+            key=state.MEMBER_FROM_PROFIT,
             help=(
                 "Например, партнёр получает дивиденды, а не зарплату. В себестоимость "
                 "проекта сумма входит, но базу налога «доходы − расходы» не уменьшает."
@@ -580,7 +667,7 @@ with tab_team:
                 min_value=1.0,
                 step=8.0,
                 format="%.0f",
-                key="add_member_contract_hours",
+                key=state.MEMBER_HOURS,
                 help="Сколько часов сотрудник работает по договору. Норма ≈ 168 ч/мес.",
             )
         with col_u:
@@ -590,7 +677,7 @@ with tab_team:
                 max_value=100.0,
                 step=5.0,
                 format="%.1f",
-                key="add_member_utilization_pct",
+                key=state.MEMBER_UTILIZATION,
                 help=(
                     "Доля контрактных часов, которую фирма продаёт клиентам. "
                     "Обычно 60–75%, у партнёров ниже."
@@ -599,71 +686,61 @@ with tab_team:
 
         preview: EmployeeCost | None
         try:
-            preview = employee_cost(form_employee())
+            preview = employee_cost(state.card_employee())
         except ValidationError:
             preview = None
         if preview is not None and preview.monthly_cost > 0:
-            sym = CURRENCY_SYMBOLS[Currency(st.session_state["add_member_currency"])]
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric(f"В месяц, {sym}", f"{preview.monthly_cost:,.0f}")
-            m2.metric(f"Контрактный час, {sym}", f"{preview.contract_cost_rate:,.0f}")
-            m3.metric(f"Биллируемый час, {sym}", f"{preview.cost_rate:,.0f}")
-            m4.metric(
-                f"Недозагрузка, {sym}/ч",
-                f"{preview.underutilization_rate:,.0f}",
-                help="Себестоимость биллируемого часа минус контрактного: оплата "
-                "небиллируемого времени, которую должен вернуть каждый проданный час.",
+            sym = CURRENCY_SYMBOLS[Currency(st.session_state[state.MEMBER_CURRENCY])]
+            kpi_grid(
+                [
+                    Kpi(
+                        "member-monthly",
+                        "В месяц",
+                        money(preview.monthly_cost, sym),
+                        formulas.monthly_cost(preview, sym),
+                    ),
+                    Kpi(
+                        "member-contract",
+                        "Контрактный час",
+                        money_rate(preview.contract_cost_rate, sym),
+                        formulas.contract_rate(preview, sym),
+                    ),
+                    Kpi(
+                        "member-billable",
+                        "Биллируемый час",
+                        money_rate(preview.cost_rate, sym),
+                        formulas.billable_rate(preview, sym),
+                    ),
+                    Kpi(
+                        "member-idle",
+                        "Недозагрузка",
+                        money_rate(preview.underutilization_rate, sym),
+                        formulas.underutilization_rate(preview, sym),
+                    ),
+                ]
             )
 
-    st.button("➕ Добавить сотрудника", type="primary", key="btn_add_member", on_click=add_member)
-    message = st.session_state.pop("add_member_message", None)
+    if editing:
+        col_save, col_cancel = st.columns([1, 1])
+        col_save.button(
+            "💾 Сохранить изменения", type="primary", key="btn_save_member", on_click=save_member
+        )
+        col_cancel.button("Отмена", key="btn_cancel_member", on_click=cancel_edit)
+    else:
+        st.button(
+            "➕ Добавить сотрудника", type="primary", key="btn_add_member", on_click=add_member
+        )
+    message = st.session_state.pop(MEMBER_MESSAGE, None)
     if message is not None:
         kind, text = message
         (st.success if kind == "success" else st.error)(text)
-
-    st.markdown("### Текущая команда")
-    team_list = state.team()
-    if not team_list:
-        st.info("Пока никого нет. Добавьте первого сотрудника выше.")
-    else:
-        widths = [2, 1.2, 1, 1, 1, 1, 0.8, 0.5]
-        headers = [
-            "Имя",
-            "Роль",
-            "Ставка клиенту",
-            "В месяц",
-            "Контр. час",
-            "Биллир. час",
-            "Утилизация",
-        ]
-        for column, header in zip(st.columns(widths), headers, strict=False):
-            column.markdown(f"**{header}**")
-        for idx, member in enumerate(team_list):
-            cost = employee_cost(member)
-            sym = CURRENCY_SYMBOLS[member.currency]
-            cells = st.columns(widths)
-            profit_mark = " · из прибыли" if member.paid_from_profit else ""
-            cells[0].write(f"**{member.name}**{profit_mark}")
-            cells[1].write(ROLE_LABELS[member.role])
-            cells[2].write(f"{member.billing_rate:,.0f} {sym}")
-            cells[3].write(f"{cost.monthly_cost:,.0f} {sym}")
-            cells[4].write(f"{cost.contract_cost_rate:,.0f} {sym}")
-            cells[5].write(f"{cost.cost_rate:,.0f} {sym}")
-            cells[6].write(f"{member.target_utilization * PERCENT:.1f}%")
-            if cells[7].button("🗑", key=f"del_member_{idx}", help="Удалить"):
-                team_list.pop(idx)
-                st.rerun()
-        st.caption(
-            f"Всего: {len(team_list)} сотрудников · «Биллир. час» — себестоимость "
-            "биллируемого часа, она идёт в расчёт проекта."
-        )
 
 
 # ===========================================================================
 # ВКЛАДКА 3 — РАСХОДЫ ФИРМЫ
 # ===========================================================================
 with tab_exp:
-    st.subheader("Накладные расходы фирмы (Overheads)")
+    st.subheader("Накладные расходы фирмы")
     st.caption(
         "Ставка накладных = Σ(месячные накладные) / биллируемая ёмкость команды. "
         "На проект относится пропорционально его часам."
@@ -687,7 +764,7 @@ with tab_exp:
         st.session_state[OVERHEADS_EDITOR_BASE] = editor_rows(items)
         st.session_state.pop(OVERHEADS_EDITOR, None)
 
-    col_tpl, col_clear = st.columns([1, 1])
+    col_tpl, col_clear = st.columns(2)
     col_tpl.button(
         "📥 Загрузить типовой шаблон",
         on_click=reset_overheads,
@@ -742,7 +819,7 @@ with tab_exp:
             st.warning(f"Пропущена запись «{row['Название']}»: {exc}")
     st.session_state[state.OVERHEADS] = parsed
 
-    st.markdown("### Ёмкость фирмы и ставка накладных")
+    st.markdown("#### Ёмкость фирмы и ставка накладных")
     team_now = state.team()
     contract_total = decimal_sum(m.contract_hours_per_month for m in team_now)
     capacity_total = billable_capacity(team_now)
@@ -756,17 +833,42 @@ with tab_exp:
             primary_currency,
         )
     except CurrencyConversionError as exc:
-        st.warning(f"{exc}. Курсы задаются на вкладке «Юрисдикция, налоги, курсы».")
+        st.warning(f"{exc}. Курсы задаются на вкладке «Юрисдикция и налоги».")
         total_monthly = oh_rate = ZERO
-    utilization = capacity_total / contract_total * PERCENT if contract_total > 0 else ZERO
+    utilization = capacity_total / contract_total if contract_total > 0 else None
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Контрактные часы", f"{contract_total:,.0f} ч/мес")
-    m2.metric("Биллируемая ёмкость", f"{capacity_total:,.1f} ч/мес")
-    m3.metric("Утилизация фирмы", f"{utilization:.1f}%")
-    m4.metric(f"Ставка накладных, {sym}/ч", f"{oh_rate:,.1f}")
-    st.caption(
-        f"Накладные в месяц: **{total_monthly:,.0f} {sym}** · Ставка накладных = накладные ÷ "
-        "биллируемая ёмкость команды (Σ контрактные часы × утилизация). Ёмкость "
-        "считается по карточкам сотрудников на вкладке «Команда»."
+    kpi_grid(
+        [
+            Kpi(
+                "contract-hours",
+                "Контрактные часы",
+                f"{hours_label(contract_total)}/мес",
+                formulas.contract_hours_total(contract_total),
+            ),
+            Kpi(
+                "capacity",
+                "Биллируемая ёмкость",
+                f"{hours_label(capacity_total)}/мес",
+                formulas.capacity_total(capacity_total),
+            ),
+            Kpi(
+                "firm-utilization",
+                "Утилизация фирмы",
+                pct_label(utilization, to_decimal("0.1")),
+                formulas.firm_utilization(capacity_total, contract_total),
+            ),
+            Kpi(
+                "overhead-rate",
+                "Ставка накладных",
+                money_rate(oh_rate, sym),
+                formulas.overhead_rate(oh_rate, total_monthly, capacity_total, sym),
+                caption=f"Накладные в месяц: {money(total_monthly, sym)}",
+            ),
+        ]
     )
+    st.caption(
+        "Ставка накладных = накладные ÷ биллируемая ёмкость команды (Σ контрактные часы × "
+        "утилизация). Ёмкость считается по карточкам сотрудников на вкладке «Команда»."
+    )
+
+nav.footer(nav.FIRM)
