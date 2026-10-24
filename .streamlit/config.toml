@@ -3,14 +3,207 @@
 #   uv run streamlit run app/Home.py
 # В отличие от v0.3, enableCORS = false не задаётся: Streamlit 1.66 считает
 # это небезопасным и предупреждает при запуске, а приложению это не нужно.
+
+# Тема «Бордо и пергамент» (фаза 6, ADR 0008): светлая и тёмная, по умолчанию —
+# как в системе; переключается в меню ⋮ → Settings. Контраст текста — не ниже
+# 4,5:1, цветов графиков — не ниже 3:1 к фону (палитра — app/ui/charts.py).
+# Шрифты ParaType (OFL) лежат в app/static/fonts: браузер не обращается к
+# сторонним серверам шрифтов.
 [theme]
-base = "light"
+font = "PT Sans, 'Segoe UI', Roboto, Arial, sans-serif"
+headingFont = "PT Serif, Georgia, 'Times New Roman', serif"
+codeFont = "PT Mono, 'Courier New', monospace"
+headingFontWeights = [700, 700, 700, 700, 700, 700]
+headingFontSizes = ["2.4rem", "1.6rem", "1.3rem", "1.1rem", "1rem", "0.9rem"]
+baseRadius = "0.5rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+# Цвета серий графиков — те же, что в app/ui/charts.py.
+chartCategoricalColors = ["#3767A4", "#A280C8", "#B8892D", "#A94753", "#46A16B"]
+
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-latin-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-latin-ext-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-cyrillic-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-cyrillic-ext-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-latin-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-latin-ext-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-cyrillic-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116"
+[[theme.fontFaces]]
+family = "PT Sans"
+url = "app/static/fonts/pt-sans-cyrillic-ext-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F"
+[[theme.fontFaces]]
+family = "PT Serif"
+url = "app/static/fonts/pt-serif-latin-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+[[theme.fontFaces]]
+family = "PT Serif"
+url = "app/static/fonts/pt-serif-latin-ext-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
+[[theme.fontFaces]]
+family = "PT Serif"
+url = "app/static/fonts/pt-serif-cyrillic-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116"
+[[theme.fontFaces]]
+family = "PT Serif"
+url = "app/static/fonts/pt-serif-cyrillic-ext-700-normal.woff2"
+weight = "700"
+style = "normal"
+unicodeRange = "U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F"
+[[theme.fontFaces]]
+family = "PT Mono"
+url = "app/static/fonts/pt-mono-latin-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+[[theme.fontFaces]]
+family = "PT Mono"
+url = "app/static/fonts/pt-mono-latin-ext-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"
+[[theme.fontFaces]]
+family = "PT Mono"
+url = "app/static/fonts/pt-mono-cyrillic-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116"
+[[theme.fontFaces]]
+family = "PT Mono"
+url = "app/static/fonts/pt-mono-cyrillic-ext-400-normal.woff2"
+weight = "400"
+style = "normal"
+unicodeRange = "U+0460-052F,U+1C80-1C8A,U+20B4,U+2DE0-2DFF,U+A640-A69F,U+FE2E-FE2F"
+
+[theme.light]
+primaryColor = "#7A1F2E"
+backgroundColor = "#FBF9F5"
+secondaryBackgroundColor = "#F2EDE4"
+textColor = "#221F1A"
+borderColor = "#E2D9CA"
+dataframeBorderColor = "#E2D9CA"
+dataframeHeaderBackgroundColor = "#F2EDE4"
+linkColor = "#7A1F2E"
+codeTextColor = "#7A1F2E"
+codeBackgroundColor = "#F2EDE4"
+# Сообщения, бейджи и светофор: текст на своём фоне — не ниже 4,5:1.
+greenColor = "#2E7D4F"
+greenTextColor = "#276B43"
+greenBackgroundColor = "#E6F2EA"
+yellowColor = "#9A6A00"
+yellowTextColor = "#8A5F00"
+yellowBackgroundColor = "#F6EDD8"
+orangeColor = "#9A6A00"
+orangeTextColor = "#8A5F00"
+orangeBackgroundColor = "#F6EDD8"
+redColor = "#A1263A"
+redTextColor = "#A1263A"
+redBackgroundColor = "#F6E3E6"
+blueColor = "#2F5D8A"
+blueTextColor = "#2F5D8A"
+blueBackgroundColor = "#E3ECF5"
+violetColor = "#6B4C9A"
+violetTextColor = "#6B4C9A"
+violetBackgroundColor = "#EEE8F5"
+grayColor = "#6B6357"
+grayTextColor = "#6B6357"
+grayBackgroundColor = "#ECE7DE"
+
+[theme.light.sidebar]
+backgroundColor = "#F2EDE4"
+secondaryBackgroundColor = "#E9E2D6"
+
+[theme.dark]
+primaryColor = "#B85366"
+backgroundColor = "#1C1A17"
+secondaryBackgroundColor = "#282420"
+textColor = "#ECE5D9"
+borderColor = "#3B3630"
+dataframeBorderColor = "#3B3630"
+dataframeHeaderBackgroundColor = "#282420"
+linkColor = "#E0939D"
+codeTextColor = "#E0939D"
+codeBackgroundColor = "#282420"
+greenColor = "#6CC08F"
+greenTextColor = "#6CC08F"
+greenBackgroundColor = "#1F3327"
+yellowColor = "#E2B04A"
+yellowTextColor = "#E2B04A"
+yellowBackgroundColor = "#3A2F17"
+orangeColor = "#E2B04A"
+orangeTextColor = "#E2B04A"
+orangeBackgroundColor = "#3A2F17"
+redColor = "#F08A99"
+redTextColor = "#F08A99"
+redBackgroundColor = "#3D2226"
+blueColor = "#8DB4E2"
+blueTextColor = "#8DB4E2"
+blueBackgroundColor = "#1D2836"
+violetColor = "#C1A8E6"
+violetTextColor = "#C1A8E6"
+violetBackgroundColor = "#2C2438"
+grayColor = "#A69D90"
+grayTextColor = "#A69D90"
+grayBackgroundColor = "#2E2A25"
+
+[theme.dark.sidebar]
+backgroundColor = "#221F1B"
+secondaryBackgroundColor = "#2E2A25"
+
+[client]
+# Кнопка «Deploy» и меню разработчика не нужны посетителю демо.
+toolbarMode = "viewer"
 
 [server]
 headless = true
 # Загружаемый файл профиля — десятки килобайт; ядро отклоняет файлы больше
 # 2 МБ (rentab_core.io.MAX_PROFILE_BYTES), Streamlit не принимает больше 2 МБ.
 maxUploadSize = 2
+# Шрифты темы из app/static: только чтение, пользовательских данных там нет.
+enableStaticServing = true
 
 [browser]
 # Приватность (L-10): браузер не отправляет Streamlit анонимную статистику
