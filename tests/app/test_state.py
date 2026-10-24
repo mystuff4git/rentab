@@ -18,6 +18,7 @@ from rentab_core.models import (
     ActualHours,
     AusnProfile,
     Country,
+    Employee,
     ExchangeRates,
     Firm,
     FixedPricing,
@@ -249,3 +250,29 @@ def test_actuals_editor_rows_round_trip() -> None:
     table[1][state.ACTUALS_FACT] = 0.0
     parsed = state.parse_actuals_rows(table)
     assert [(row.employee, row.hours) for row in parsed] == [("Юрист", d(0)), ("Стажёр", d(12))]
+
+
+@pytest.mark.parametrize(
+    "employee", [*demo_workspace().firm.team, *full_featured_workspace().firm.team]
+)
+def test_card_values_round_trip(employee: Employee) -> None:
+    # Правка сотрудника: карточка заполняется его данными и собирает того же сотрудника.
+    assert state.card_employee(state.card_values(employee)) == employee
+
+
+def test_rename_in_project_changes_plan_and_fact() -> None:
+    record = demo_workspace().projects[1]
+    values = state.project_values(record)
+    renamed = state.rename_in_project(values, "Юрист", "Юрист Петрова")
+    assert set(renamed) == {state.PROJECT_STAGES, state.ACTUAL_HOURS}
+    employees = {
+        item.employee for stage in renamed[state.PROJECT_STAGES] for item in stage.assignments
+    }
+    assert employees == {"Партнёр", "Юрист Петрова", "Стажёр"}
+    assert {row.employee for row in renamed[state.ACTUAL_HOURS]} == {
+        "Партнёр",
+        "Юрист Петрова",
+        "Стажёр",
+    }
+    # Проект без этапов и факта не меняется.
+    assert state.rename_in_project({}, "Юрист", "Юрист Петрова") == {}

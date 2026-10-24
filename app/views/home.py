@@ -1,31 +1,27 @@
-"""Rentab — точка входа приложения Streamlit.
+"""Главная: о продукте, приватность, «Как начать», данные сессии и проекты.
 
-Запуск из корня репозитория:
-
-    uv run streamlit run app/Home.py
-
-Расчёты выполняет ядро `rentab_core`; страницы в `pages/` только собирают
-ввод и рисуют результат. Данные фирмы хранятся только в текущей сессии:
-приложение ничего не записывает на диск сервера (L-10). Главная страница
-загружает демо-фирму и переносит данные в файл JSON и обратно
-(`rentab_core.io`): файл скачивает и загружает сам пользователь.
+Данные фирмы хранятся только в текущей сессии: приложение ничего не
+записывает на диск сервера (L-10). Главная загружает демо-фирму и переносит
+данные в файл JSON и обратно (`rentab_core.io`): файл скачивает и загружает
+сам пользователь. Шаги «Как начать» показывают, что уже заполнено.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import functools
 import re
 
-import pandas as pd
 import streamlit as st
 
 from rentab_core.demo import demo_workspace
 from rentab_core.errors import ProfileImportError
 from rentab_core.io import ImportResult, NoteLevel, Workspace, dumps, loads
-from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, decimal_sum
-from ui import state
-from ui.labels import PRICING_LABELS, money
-from ui.projects import render_project_switcher
+from rentab_core.money import CURRENCY_SYMBOLS, decimal_sum
+from rentab_core.results import Estimate
+from ui import nav, state
+from ui.components import Table, render_table
+from ui.labels import DASH, PRICING_LABELS, hours_label, money, pct_label, regime_label
 
 PRIVACY_DISCLAIMER = (
     "**Данные не покидают вашу сессию.** Всё, что вы вводите, хранится только в памяти "
@@ -139,7 +135,7 @@ def render_pending() -> None:
     what = "демо-фирма" if source == SOURCE_DEMO else "данные из файла"
     st.warning(
         f"В сессии уже есть данные: их заменит {what}. Если они нужны, сначала "
-        "скачайте их в JSON (справа).",
+        "скачайте их в JSON («Сохранить в файл»).",
         icon="⚠️",
     )
     col_yes, col_no, _ = st.columns([1, 1, 3])
@@ -149,7 +145,7 @@ def render_pending() -> None:
 
 def render_import() -> None:
     """Загрузка файла профиля: проверка, сводка и кнопка загрузки."""
-    st.markdown("**📂 Загрузить из файла**")
+    st.markdown("**Загрузить из файла**")
     st.file_uploader(
         "Файл профиля Rentab (.json) или firm_profile.json v0.3",
         type=["json"],
@@ -176,7 +172,7 @@ def render_import() -> None:
 
 def render_export() -> None:
     """Выгрузка фирмы и проектов в JSON."""
-    st.markdown("**💾 Сохранить в файл**")
+    st.markdown("**Сохранить в файл**")
     st.session_state.setdefault(EXPORT_PROJECTS, True)
     include = st.checkbox("Вместе с проектами", key=EXPORT_PROJECTS)
     if include:
@@ -192,68 +188,128 @@ def render_export() -> None:
     st.caption("Файл остаётся у вас: приложение его не хранит.")
 
 
+ACTIVE_MARK = "▶ "
+
+
 def render_projects() -> None:
-    """Проекты сессии: цена, часы и результат последней сметы."""
+    """Проекты сессии: цена, часы и результат сметы по текущим данным."""
     rows = []
     active = state.active_id()
     for slot in state.projects():
         values = state.slot_values(slot)
         record = state.project_record(values, strict=False)
-        result = state.slot_estimate(slot)
         hours = decimal_sum(
             item.hours for stage in record.project.stages for item in stage.assignments
         )
+        outcome: Estimate | str = DASH
+        if hours > 0 and state.team() and state.jurisdiction() is not None:
+            outcome = state.estimate_outcome(functools.partial(state.slot_scenario, slot))
+        estimate = outcome if isinstance(outcome, Estimate) else None
+        symbol = None if estimate is None else CURRENCY_SYMBOLS[estimate.currency]
+        mark = ACTIVE_MARK if slot.id == active else ""
         rows.append(
             {
-                "": "▶" if slot.id == active else "",
-                "Проект": state.slot_title(slot.id),
-                "Клиент": record.project.client,
+                "Проект": mark + state.slot_title(slot.id),
+                "Клиент": record.project.client or DASH,
                 "Модель цены": PRICING_LABELS[state.pricing_kind(values)],
-                "Часов": float(hours),
-                "Факт": "—" if record.project.actuals is None else "введён",
-                "NNE": "—"
-                if result is None
-                else money(result.nne, CURRENCY_SYMBOLS[result.currency]),
-                "Маржа": "—" if result is None else f"{result.margin * PERCENT:.1f}%",
+                "Часов": hours_label(hours),
+                "Факт": DASH if record.project.actuals is None else "введён",
+                "NNE": DASH if estimate is None or symbol is None else money(estimate.nne, symbol),
+                "Маржа": DASH if estimate is None else pct_label(estimate.margin),
             }
         )
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    render_table(
+        Table(
+            columns=["Проект", "Клиент", "Модель цены", "Часов", "Факт", "NNE", "Маржа"],
+            rows=rows,
+            numeric=frozenset({"Часов", "NNE", "Маржа"}),
+            key="projects",
+        )
+    )
     st.caption(
-        "▶ — активный проект: его открывают страницы «Проект» и «Дашборд». Переключить, "
-        "создать, скопировать или удалить проект можно в боковой панели. NNE и маржа — по "
-        "последней рассчитанной смете."
+        f"{ACTIVE_MARK.strip()} — активный проект: его открывают шаги «Проект», «Результат», "
+        "«Сравнение» и «План–факт». Переключить, создать, скопировать или удалить проект можно "
+        "в боковой панели. NNE и маржа — по текущим данным проекта."
     )
 
 
-st.set_page_config(
-    page_title="Rentab",
-    page_icon="⚖️",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+def render_step(key: str, title: str, ready: bool, summary: str, page: str, link: str) -> None:
+    """Карточка шага «Как начать»: состояние, что заполнено, переход."""
+    with st.container(border=True, key=f"step-{key}"):
+        badge = ":green-badge[✓ заполнено]" if ready else ":gray-badge[○ не заполнено]"
+        st.markdown(f"**{title}** &nbsp; {badge}")
+        st.caption(summary)
+        st.page_link(page, label=link, icon=":material/arrow_forward:")
 
-state.init_defaults()
-state.persist_widgets()
-render_project_switcher()
 
-st.title("⚖️ Rentab")
-st.subheader("Калькулятор рентабельности IP-проектов")
+def render_start() -> None:
+    """«Как начать»: три шага визарда с тем, что уже введено."""
+    team = state.team()
+    jurisdiction = state.jurisdiction()
+    if nav.firm_ready() and jurisdiction is not None:
+        regimes = ", ".join(
+            regime_label(jurisdiction.tax_profile(country)) for country in jurisdiction.countries
+        )
+        firm_summary = f"Сотрудников: {len(team)} · {regimes}"
+    else:
+        firm_summary = "Юрисдикция, налоговый режим, команда с утилизацией и накладные."
+    title = state.slot_title(state.active_id())
+    hours = decimal_sum(item.hours for stage in state.stages() for item in stage.assignments)
+    project_summary = (
+        f"«{title}»: {hours_label(hours)}, {PRICING_LABELS[state.pricing_kind()].lower()}"
+        if hours > 0
+        else "Этапы и исполнители, модель цены, НДС, пошлины и расходы."
+    )
+    outcome: Estimate | str = "Смета появится, когда заполнены фирма и проект."
+    if nav.firm_ready() and nav.project_ready():
+        outcome = state.estimate_outcome(state.scenario)
+    if isinstance(outcome, Estimate):
+        sym = CURRENCY_SYMBOLS[outcome.currency]
+        result_summary = (
+            f"NNE {money(outcome.nne, sym)} · маржа {pct_label(outcome.margin)} · к оплате "
+            f"{money(outcome.total_client, sym)}"
+        )
+    else:
+        result_summary = outcome
+    col_firm, col_project, col_result = st.columns(3)
+    with col_firm:
+        render_step("firm", "1 · Фирма", nav.firm_ready(), firm_summary, nav.FIRM, "Фирма")
+    with col_project:
+        render_step(
+            "project", "2 · Проект", nav.project_ready(), project_summary, nav.PROJECT, "Проект"
+        )
+    with col_result:
+        render_step(
+            "result",
+            "3 · Результат",
+            isinstance(outcome, Estimate),
+            result_summary,
+            nav.RESULT,
+            "Результат",
+        )
+    st.caption(
+        "Дальше — «Сравнение» моделей цены и налоговых режимов и «План–факт» по фактическим "
+        "часам. Чтобы посмотреть всё на примере, загрузите демо-фирму."
+    )
+
+
+st.title("Rentab")
 st.markdown(
-    """
-    Rentab — инструмент для расчёта стоимости и рентабельности проектов
-    в сфере IP-юридического консалтинга по методологии Д. Майстера:
-    **себестоимость биллируемого часа · утилизация · рычаг · чистая прибыль (NNE)**.
-    НДС начисляется сверху, пошлины — возмещаемые расходы вне выручки.
-    """
+    "**Стоимость и рентабельность IP-проектов** по методологии Д. Майстера: себестоимость "
+    "биллируемого часа, утилизация, рычаг, чистая прибыль (NNE). НДС начисляется сверху, "
+    "пошлины — возмещаемые расходы вне выручки."
 )
 st.info(PRIVACY_DISCLAIMER, icon="🔒")
 
-st.markdown("### 🚀 Данные")
+st.subheader("Как начать")
+render_start()
+
+st.subheader("Данные")
 render_report()
 render_pending()
 col_demo, col_import, col_export = st.columns(3)
 with col_demo:
-    st.markdown("**🎓 Демо-фирма**")
+    st.markdown("**Демо-фирма**")
     st.caption(
         "Фирма со слайда 3 защиты ВКР (партнёр, юрист, стажёр; УСН 6% + НДС 5%) и четыре "
         "проекта: слайд 3 (план и факт), товарный знак (с фактом), изобретение, ответ на "
@@ -264,38 +320,14 @@ with col_demo:
         on_click=request_replace,
         args=(SOURCE_DEMO,),
         disabled=PENDING_REPLACE in st.session_state,
+        type="primary",
     )
 with col_import:
     render_import()
 with col_export:
     render_export()
 
-st.markdown("### 📁 Проекты сессии")
+st.subheader("Проекты сессии")
 render_projects()
 
-st.markdown(
-    """
-    ---
-
-    ### Навигация
-
-    Используйте меню **слева** для перехода между разделами:
-
-    | Страница | Назначение |
-    |---|---|
-    | **01 Настройка** | Юрисдикция, налоги, курсы; команда с утилизацией; накладные |
-    | **02 Проект** | Этапы и исполнители, модель цены, НДС, расходы, смета |
-    | **03 Дашборд** | NNE и маржа, структура выручки, светофор этапов, смета XLSX |
-    | **04 Чувствительность** | Запас часов до безубыточности, торнадо, «что если» |
-    | **05 Сравнение** | Матрица «модель цены × налоговый режим» с доступностью режимов |
-    | **06 План–факт** | Фактические часы, реализация, списания, перерасход по этапам и ролям |
-    """
-)
-if not state.team():
-    st.info(
-        "Начните с раздела **01 Настройка** — выберите юрисдикцию и введите состав команды — "
-        "или загрузите демо-фирму.",
-        icon="👆",
-    )
-
-st.caption("Rentab · наследник ВКР НИУ ВШЭ (v0.3) · Python · Streamlit · Plotly")
+st.caption("Rentab · наследник ВКР НИУ ВШЭ (v0.3) · Python · Streamlit · Plotly · шрифты ParaType")

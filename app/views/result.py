@@ -1,55 +1,351 @@
-"""Страница 03: дашборд сметы (страница v0.3 на ядре, методология фазы 2).
+"""Шаг 3 «Результат»: вкладки «Смета» и «Чувствительность».
 
-Показатели берутся из `rentab_core.dashboard`, смета XLSX — из
-`rentab_core.estimate_xlsx`. Все суммы — в валюте проекта: пересчёт валют
-выполняет ядро при расчёте (L-06). Маржа и эффективная ставка налога — от
-выручки без НДС (L-15); светофор этапов — для всех моделей цены (L-04, L-19).
-Показывается смета активного проекта; проект выбирается в боковой панели.
+Смета считается по текущим данным активного проекта (`rentab_core`), кнопки
+«Рассчитать» нет. «Смета»: KPI-карточки с формулами, структура выручки,
+светофор этапов, исполнители и расходы, выгрузка XLSX. «Чувствительность» —
+запас часов, торнадо и «что если» (`ui.sensitivity_tab`). Вкладка — виджет с
+ключом: открытая вкладка переживает перезапуск и переход между страницами, и
+считается только она. Все суммы — в валюте проекта: пересчёт валют выполняет
+ядро (L-06); маржа и эффективная ставка налога — от выручки без НДС (L-15).
 """
 
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 from pydantic import ValidationError
 
 from rentab_core import RentabError, dashboard, estimate_xlsx
-from rentab_core.analysis.dashboard import Profitability
 from rentab_core.analysis.plan_fact import plan_fact
 from rentab_core.analysis.sensitivity import BreakEvenStatus, break_even
-from rentab_core.models import ROLE_LABELS, CappedPricing, FixedPricing
-from rentab_core.money import CURRENCY_SYMBOLS, PERCENT
-from rentab_core.results import Estimate
-from ui import state
+from rentab_core.analysis.stages import classify
+from rentab_core.costing import billable_capacity, total_overheads_monthly
+from rentab_core.estimate import calculate_estimate
+from rentab_core.models import CappedPricing, FixedPricing, Scenario
+from rentab_core.money import CURRENCY_SYMBOLS
+from rentab_core.results import Estimate, StageFlag
+from ui import charts, formulas, nav, sensitivity_tab, state
+from ui.analytics import compute, render_header, require_scenario, scenario_regime
+from ui.components import FLAG_STATUS, Cell, Kpi, Row, Table, kpi_grid, render_table
 from ui.labels import (
+    DASH,
     EXPENSE_TYPE_LABELS,
     PROFITABILITY_MESSAGES,
-    STAGE_FLAG_BG_COLORS,
-    STAGE_FLAG_LABELS,
+    employee_title,
+    flag_badge,
+    hours_label,
     money,
+    money_rate,
+    number_label,
+    pct_label,
     signed_hours,
 )
-from ui.projects import render_project_switcher
 
-# Цвета слоёв структуры цены (как в v0.3).
-COLOR_LABOR = "#3498db"
-COLOR_OVERHEADS = "#9b59b6"
-COLOR_TAX = "#e74c3c"
-COLOR_OWN = "#95a5a6"
-COLOR_PROFIT = "#2ecc71"
+TAB_ESTIMATE = "Смета"
+TAB_SENSITIVITY = "Чувствительность"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-state.init_defaults()
-state.persist_widgets()
-render_project_switcher()
+LEVERAGE_QUANTUM = Decimal("0.01")
 
 
-def render_estimate_download(estimate: Estimate) -> None:
-    """Поле «Название фирмы» и кнопка скачивания XLSX-сметы."""
-    st.markdown("#### Экспорт сметы")
+def open_sensitivity() -> None:
+    """Колбэк: открыть вкладку «Чувствительность»."""
+    st.session_state[state.RESULT_TAB] = TAB_SENSITIVITY
+
+
+def render_kpis(scenario: Scenario, estimate: Estimate) -> None:
+    """Главные и вспомогательные показатели с формулами в подсказках."""
+    sym = CURRENCY_SYMBOLS[estimate.currency]
+    flag = classify(estimate.margin, estimate.target_margin)
+    view = dashboard(estimate)
+    firm = scenario.firm
+    try:
+        overheads_total = total_overheads_monthly(
+            firm.overheads, estimate.currency, firm.exchange_rates
+        )
+    except RentabError:
+        overheads_total = Decimal(0)
+    capacity = billable_capacity(firm.team)
+    tax_share = estimate.tax.tax / estimate.revenue if estimate.revenue > 0 else None
+    kpi_grid(
+        [
+            Kpi(
+                "revenue",
+                "Выручка без НДС",
+                money(estimate.revenue, sym),
+                formulas.revenue(estimate),
+            ),
+            Kpi(
+                "total",
+                "К оплате клиентом",
+                money(estimate.total_client, sym),
+                formulas.total_client(estimate),
+                caption=f"НДС {money(estimate.vat, sym)} · возмещаемые "
+                f"{money(estimate.disbursements_billed, sym)}",
+            ),
+            Kpi(
+                "nne",
+                "Чистая прибыль (NNE)",
+                money(estimate.nne, sym),
+                formulas.nne(estimate),
+                status=FLAG_STATUS[flag],
+                caption=PROFITABILITY_MESSAGES[view.profitability],
+            ),
+            Kpi(
+                "margin",
+                "Маржа NNE",
+                pct_label(estimate.margin),
+                formulas.margin(estimate),
+                status=FLAG_STATUS[flag],
+                caption=f"цель {pct_label(estimate.target_margin, Decimal(1))}",
+            ),
+        ]
+    )
+    kpi_grid(
+        [
+            Kpi(
+                "costs",
+                "Издержки",
+                money(estimate.total_costs, sym),
+                formulas.costs(estimate),
+            ),
+            Kpi("tax", "Налог", money(estimate.tax.tax, sym), formulas.tax(estimate)),
+            Kpi(
+                "effective-tax",
+                "Эффективная ставка налога",
+                pct_label(tax_share),
+                formulas.effective_tax_rate(estimate),
+            ),
+            Kpi(
+                "underutilization",
+                "Стоимость недозагрузки",
+                money(estimate.underutilization_cost, sym),
+                formulas.underutilization(estimate),
+            ),
+            Kpi(
+                "blended",
+                "Средневзвешенная ставка",
+                money_rate(estimate.blended_rate, sym),
+                formulas.blended_rate(
+                    estimate.shadow_value, estimate.total_hours, estimate.blended_rate, sym
+                ),
+            ),
+            Kpi(
+                "leverage",
+                "Коэффициент рычага",
+                number_label(estimate.leverage, LEVERAGE_QUANTUM),
+                formulas.leverage(estimate.lines, estimate.leverage),
+            ),
+            Kpi(
+                "overhead-rate",
+                "Ставка накладных",
+                money_rate(estimate.overhead_rate, sym),
+                formulas.overhead_rate(estimate.overhead_rate, overheads_total, capacity, sym),
+            ),
+            Kpi(
+                "hours",
+                "Часов в проекте",
+                hours_label(estimate.total_hours),
+                formulas.project_hours(estimate.total_hours),
+            ),
+        ]
+    )
+
+
+def render_notes(estimate: Estimate) -> None:
+    """Пояснения к смете: потолок, уменьшение налога, исполнители не из команды."""
+    sym = CURRENCY_SYMBOLS[estimate.currency]
+    if isinstance(estimate.pricing, CappedPricing) and estimate.write_off > 0:
+        st.caption(
+            f"Потолок сработал: по ставкам {money(estimate.shadow_value_net, sym)}, "
+            f"списано {money(estimate.write_off, sym)}."
+        )
+    if isinstance(estimate.pricing, FixedPricing) and estimate.pricing.price is None:
+        st.caption(
+            "Цена «издержки + маржа» при целевой марже "
+            f"{pct_label(estimate.target_margin, Decimal(1))}: НДС в цену не закладывается, он "
+            "начисляется сверху."
+        )
+    if estimate.tax.deduction > 0:
+        capped = " — упёрлось в предел 50%" if estimate.tax.deduction_capped else ""
+        st.caption(
+            "Налог УСН «доходы» уменьшен на страховые взносы на часах проекта: "
+            f"{money(estimate.tax.deduction, sym)} из {money(estimate.tax.contributions, sym)}"
+            f"{capped}."
+        )
+    if estimate.tax.nondeductible > 0:
+        st.caption(
+            f"Вознаграждение из прибыли {money(estimate.tax.nondeductible, sym)} не уменьшает "
+            "базу налога «доходы − расходы»."
+        )
+    for item in estimate.unresolved_assignments:
+        st.warning(
+            f"Этап «{item.stage_name}»: исполнителя «{item.employee}» нет в команде, "
+            "назначение не вошло в расчёт."
+        )
+
+
+def render_teaser(scenario: Scenario, estimate: Estimate) -> None:
+    """Запас часов и NNE по факту — со ссылками на вкладку и шаг."""
+    symbol = CURRENCY_SYMBOLS[estimate.currency]
+    try:
+        mix = break_even(scenario).rows[0]
+    except RentabError:
+        return
+    if mix.status == BreakEvenStatus.HEADROOM and mix.extra_hours is not None:
+        text = f"Запас часов до безубыточности (микс проекта): **{signed_hours(mix.extra_hours)}**"
+    elif mix.status == BreakEvenStatus.NOT_REACHED:
+        text = "Часы сверх плана оплачивает клиент: точка безубыточности не наступает."
+    else:
+        text = "Проект убыточен по плану: что делать с часами — на вкладке «Чувствительность»."
+    col_text, col_link = st.columns([3, 1], vertical_alignment="center")
+    col_text.markdown(text)
+    col_link.button(
+        "Чувствительность",
+        icon=":material/query_stats:",
+        on_click=open_sensitivity,
+        key="btn_open_sensitivity",
+    )
+    if scenario.project.actuals is not None:
+        try:
+            fact = plan_fact(scenario).fact
+        except (RentabError, ValidationError):
+            return
+        col_text, col_link = st.columns([3, 1], vertical_alignment="center")
+        col_text.markdown(
+            f"NNE по факту: **{money(fact.nne, symbol)}** (по плану {money(estimate.nne, symbol)})"
+        )
+        col_link.page_link(nav.PLAN_FACT, label="План–факт", icon=":material/fact_check:")
+
+
+def render_structure(estimate: Estimate) -> None:
+    """Структура выручки без НДС: издержки, налог и прибыль."""
+    sym = CURRENCY_SYMBOLS[estimate.currency]
+    structure = dashboard(estimate).price_structure
+    st.markdown("#### Структура выручки без НДС")
+    layers = [
+        ("Трудозатраты", structure.direct_labor),
+        ("Накладные", structure.overheads),
+        ("Собственные расходы", structure.own),
+        ("Налог", structure.tax),
+        ("Прибыль (NNE)", structure.profit),
+    ]
+    charts.show(
+        charts.price_structure(
+            [(name, value, money(value, sym)) for name, value in layers], f"Сумма, {sym}"
+        )
+    )
+    if structure.profit < 0:
+        st.caption(
+            f"Убыток {money(-structure.profit, sym)}: издержки и налог больше выручки, "
+            "полоса прибыли уходит влево от нуля."
+        )
+
+
+def render_stages(estimate: Estimate) -> None:
+    """Светофор этапов."""
+    sym = CURRENCY_SYMBOLS[estimate.currency]
+    st.markdown("#### Этапы — светофор")
+    if not estimate.stages:
+        st.caption("Нет этапов для анализа.")
+        return
+    render_table(
+        Table(
+            columns=["Этап", "Статус", "Маржа", "NNE", "Выручка", "Издержки", "Налог", "Часы"],
+            rows=[
+                {
+                    "Этап": stage.stage_name,
+                    "Статус": Cell("", flag=stage.flag),
+                    "Маржа": pct_label(stage.margin),
+                    "NNE": money(stage.nne, sym),
+                    "Выручка": money(stage.revenue, sym),
+                    "Издержки": money(stage.costs, sym),
+                    "Налог": money(stage.tax, sym),
+                    "Часы": hours_label(stage.hours),
+                }
+                for stage in estimate.stages
+            ],
+            numeric=frozenset({"Маржа", "NNE", "Выручка", "Издержки", "Налог", "Часы"}),
+            key="stages",
+        )
+    )
+    target = pct_label(estimate.target_margin, Decimal(1))
+    st.markdown(
+        f"{flag_badge(StageFlag.GREEN)} не ниже цели {target} &nbsp; "
+        f"{flag_badge(StageFlag.YELLOW)} ниже цели &nbsp; {flag_badge(StageFlag.RED)} NNE ≤ 0"
+    )
+    st.caption(
+        "Выручка этапа — доля по теневой стоимости (ставка × часы); маржа — после накладных, "
+        "собственных расходов и налога (методология, раздел 8)."
+    )
+
+
+def render_lines(estimate: Estimate) -> None:
+    """Исполнители и расходы проекта."""
+    sym = CURRENCY_SYMBOLS[estimate.currency]
+    with st.expander("Исполнители"):
+        render_table(
+            Table(
+                columns=[
+                    "Исполнитель",
+                    "Этап",
+                    "Часы",
+                    "Ставка",
+                    "Себестоимость часа",
+                    "Трудозатраты",
+                ],
+                rows=[
+                    *(
+                        {
+                            "Исполнитель": employee_title(line.employee_name, line.role),
+                            "Этап": line.stage_name,
+                            "Часы": hours_label(line.hours),
+                            "Ставка": money_rate(line.billing_rate, sym),
+                            "Себестоимость часа": money_rate(line.cost_rate, sym),
+                            "Трудозатраты": money(line.labor_cost, sym),
+                        }
+                        for line in estimate.lines
+                    ),
+                    Row(
+                        cells={
+                            "Исполнитель": "Итого",
+                            "Часы": hours_label(estimate.total_hours),
+                            "Трудозатраты": money(estimate.direct_labor, sym),
+                        },
+                        total=True,
+                    ),
+                ],
+                numeric=frozenset({"Часы", "Ставка", "Себестоимость часа", "Трудозатраты"}),
+                key="lines",
+            )
+        )
+    if estimate.disbursements:
+        with st.expander("Расходы проекта"):
+            render_table(
+                Table(
+                    columns=["Расход", "Тип", "Этап", "Сумма", "В валюте проекта"],
+                    rows=[
+                        {
+                            "Расход": item.name,
+                            "Тип": EXPENSE_TYPE_LABELS[item.kind],
+                            "Этап": item.stage or DASH,
+                            "Сумма": money(
+                                item.original_amount, CURRENCY_SYMBOLS[item.original_currency]
+                            ),
+                            "В валюте проекта": money(item.amount, sym),
+                        }
+                        for item in estimate.disbursements
+                    ],
+                    numeric=frozenset({"Сумма", "В валюте проекта"}),
+                    key="disbursements",
+                )
+            )
+
+
+def render_download(scenario: Scenario, estimate: Estimate) -> None:
+    """Название фирмы для шапки и смета XLSX (подпись режима — интерфейса, L-18)."""
+    st.markdown("#### Смета XLSX")
     firm_name = st.text_input(
         "Название фирмы (для шапки документа)",
         key=state.FIRM_NAME,
@@ -59,254 +355,41 @@ def render_estimate_download(estimate: Estimate) -> None:
     title = estimate.project_name.strip() or "project"
     st.download_button(
         label="📄 Скачать смету проекта",
-        data=estimate_xlsx(estimate, firm_name=firm_name, issue_date=today),
+        data=estimate_xlsx(
+            estimate,
+            firm_name=firm_name,
+            issue_date=today,
+            regime_label=scenario_regime(scenario),
+        ),
         file_name=f"Смета_{title}_{today.isoformat()}.xlsx",
         mime=XLSX_MIME,
         width="content",
     )
 
 
-def render_profitability(value: Profitability, loss_message: str) -> None:
-    """Индикатор рентабельности проекта."""
-    if value == Profitability.PROFITABLE:
-        st.success(PROFITABILITY_MESSAGES[value])
-    elif value == Profitability.BREAKEVEN:
-        st.warning(PROFITABILITY_MESSAGES[value])
-    else:
-        st.error(loss_message)
+def render_estimate(scenario: Scenario, estimate: Estimate) -> None:
+    """Вкладка «Смета»."""
+    render_kpis(scenario, estimate)
+    render_notes(estimate)
+    render_teaser(scenario, estimate)
+    render_structure(estimate)
+    render_stages(estimate)
+    render_lines(estimate)
+    render_download(scenario, estimate)
 
 
-st.title("📊 Дашборд")
-
-result = state.estimate()
-if result is None:
-    st.info(
-        f"Сначала сформируйте смету проекта «{state.slot_title(state.active_id())}» "
-        "на странице «Проект»"
-    )
-    st.stop()
-
-sym = CURRENCY_SYMBOLS[result.currency]
-view = dashboard(result)
-
-st.subheader(result.project_name or "Без названия")
-meta = []
-if result.client:
-    meta.append(f"**Клиент:** {result.client}")
-meta.append(f"**Режим:** {result.regime_label}")
-meta.append(f"**Валюта:** {result.currency.value}")
-st.caption("  ·  ".join(meta))
-
-# ===========================================================================
-# Главные показатели
-# ===========================================================================
-c1, c2, c3, c4 = st.columns(4)
-c1.metric(f"Выручка без НДС, {sym}", f"{result.revenue:,.0f}")
-c2.metric(
-    f"НДС и возмещаемые расходы, {sym}",
-    f"{result.vat + result.disbursements_billed:,.0f}",
-    help=f"НДС {result.vat:,.0f} + пошлины и иные возмещаемые расходы "
-    f"{result.disbursements_billed:,.0f}. Это транзит, а не доход фирмы.",
+st.title("Результат")
+scenario = require_scenario("result")
+estimate = compute(scenario, lambda: calculate_estimate(scenario))
+render_header(scenario, estimate, with_nne=False)
+st.session_state.setdefault(state.RESULT_TAB, TAB_ESTIMATE)
+tab_estimate, tab_sensitivity = st.tabs(
+    [TAB_ESTIMATE, TAB_SENSITIVITY], key=state.RESULT_TAB, on_change="rerun"
 )
-c3.metric(f"К оплате клиентом, {sym}", f"{result.total_client:,.0f}")
-margin_delta = None if view.margin_pct is None else f"{view.margin_pct:.1f}% маржа"
-c4.metric(f"Чистая прибыль (NNE), {sym}", f"{result.nne:,.0f}", delta=margin_delta)
-if isinstance(result.pricing, CappedPricing) and result.write_off > 0:
-    st.caption(
-        f"Потолок сработал: по ставкам {result.shadow_value_net:,.0f} {sym}, "
-        f"списано {result.write_off:,.0f} {sym}."
-    )
-for item in result.unresolved_assignments:
-    st.warning(
-        f"Этап «{item.stage_name}»: исполнителя «{item.employee}» нет в команде, "
-        "назначение не вошло в расчёт."
-    )
-
-
-def render_analytics_teaser(estimate: Estimate) -> None:
-    """Запас часов и NNE по факту — если смета рассчитана по текущим данным проекта."""
-    try:
-        scenario = state.scenario()
-        report = break_even(scenario)
-    except (ValidationError, RentabError):
-        return
-    mix = report.rows[0]
-    if mix.nne != estimate.nne or report.revenue != estimate.revenue:
-        return
-    symbol = CURRENCY_SYMBOLS[estimate.currency]
-    if mix.status == BreakEvenStatus.HEADROOM and mix.extra_hours is not None:
-        text = f"🎯 Запас часов до безубыточности (микс проекта): {signed_hours(mix.extra_hours)}"
-    elif mix.status == BreakEvenStatus.NOT_REACHED:
-        text = "🎯 Часы сверх плана оплачивает клиент: точка безубыточности не наступает"
-    else:
-        text = "🎯 Проект убыточен по плану: что делать с часами — на странице «Чувствительность»"
-    col_text, col_link = st.columns([3, 1])
-    col_text.markdown(text)
-    col_link.page_link("pages/04_Чувствительность.py", label="Чувствительность", icon="➡️")
-    if scenario.project.actuals is not None:
-        try:
-            fact = plan_fact(scenario).fact
-        except RentabError:
-            return
-        col_text.markdown(
-            f"📈 NNE по факту: {money(fact.nne, symbol)} (по плану {money(estimate.nne, symbol)})"
-        )
-        col_link.page_link("pages/06_План–факт.py", label="План–факт", icon="➡️")
-
-
-render_analytics_teaser(result)
-
-st.markdown("---")
-col_chart, col_metrics = st.columns([1.4, 1])
-with col_chart:
-    st.markdown("#### Структура выручки без НДС")
-    structure = view.price_structure
-    layers = [
-        ("Прямые трудозатраты", structure.direct_labor, COLOR_LABOR),
-        ("Накладные", structure.overheads, COLOR_OVERHEADS),
-        ("Собственные расходы", structure.own, COLOR_OWN),
-        ("Налог", structure.tax, COLOR_TAX),
-        ("Прибыль (NNE)", structure.profit, COLOR_PROFIT),
-    ]
-    fig = go.Figure()
-    for layer_name, layer_value, layer_color in layers:
-        fig.add_trace(
-            go.Bar(
-                x=[float(layer_value)],
-                y=["Выручка"],
-                name=layer_name,
-                orientation="h",
-                marker={"color": layer_color},
-                hovertemplate=f"<b>{layer_name}</b>: %{{x:,.0f}} {sym}<extra></extra>",
-            )
-        )
-    fig.update_layout(
-        barmode="relative",
-        height=220,
-        margin={"t": 10, "b": 10, "l": 10, "r": 10},
-        legend={"orientation": "h", "yanchor": "top", "y": -0.3},
-        xaxis={"title": f"Сумма, {sym}", "tickformat": ",.0f"},
-        yaxis={"showticklabels": False},
-    )
-    st.plotly_chart(fig, width="stretch")
-    if isinstance(result.pricing, FixedPricing) and result.pricing.price is None:
-        st.caption(
-            f"Цена «издержки + маржа» при целевой марже {view.target_margin_pct:.0f}%: "
-            f"НДС в цену не закладывается, он начисляется сверху."
-        )
-
-with col_metrics:
-    st.markdown("#### Показатели")
-    st.metric(
-        f"Средневзвешенная ставка, {sym}/ч",
-        f"{result.blended_rate:,.0f}",
-        help="Σ(ставка × часы) / Σ часов.",
-    )
-    st.metric(
-        "Коэффициент рычага",
-        f"{result.leverage:.2f}",
-        help="Часы младших / часы старших. Выше — выше маржинальность.",
-    )
-    st.metric(
-        f"Ставка накладных, {sym}/ч",
-        f"{result.overhead_rate:,.1f}",
-        help="Σ накладных в месяц / биллируемая ёмкость команды (Σ часы × утилизация).",
-    )
-    st.metric(
-        "Эффективная ставка налога",
-        "—" if view.effective_tax_rate_pct is None else f"{view.effective_tax_rate_pct:.1f}%",
-        help="Налог на доход или прибыль / выручка без НДС.",
-    )
-    st.metric(
-        f"Стоимость недозагрузки, {sym}",
-        f"{result.underutilization_cost:,.0f}",
-        help="Часть трудозатрат, которая оплачивает небиллируемое время команды: "
-        "Σ (себестоимость биллируемого часа − контрактного) × часы.",
-    )
-
-st.markdown("---")
-st.markdown("#### Этапы проекта")
-if view.stages:
-    stage_df = pd.DataFrame(
-        [
-            {
-                "Этап": stage.stage_name,
-                "Часы": f"{stage.hours:,.1f}",
-                f"Выручка этапа, {sym}": f"{stage.revenue:,.0f}",
-                f"Издержки, {sym}": f"{stage.costs:,.0f}",
-                f"Налог, {sym}": f"{stage.tax:,.0f}",
-                f"NNE, {sym}": f"{stage.nne:,.0f}",
-                "Маржа, %": f"{stage.margin * PERCENT:.1f}",
-                "Статус": STAGE_FLAG_LABELS[stage.flag],
-                "_flag": stage.flag.value,
-            }
-            for stage in view.stages
-        ]
-    )
-    bg_by_flag = {flag.value: style for flag, style in STAGE_FLAG_BG_COLORS.items()}
-
-    def color_by_flag(row: pd.Series) -> list[str]:
-        """Фон строки по цвету светофора."""
-        style = bg_by_flag.get(str(row["_flag"]), "")
-        return [style for _ in row]
-
-    # Служебная колонка _flag нужна только для подсветки; Styler.hide в
-    # Streamlit 1.66 её не скрывает, поэтому скрываем через column_config.
-    st.dataframe(
-        stage_df.style.apply(color_by_flag, axis=1),
-        width="stretch",
-        hide_index=True,
-        column_config={"_flag": None},
-    )
-    st.caption(
-        "Выручка этапа — доля по теневой стоимости (ставка × часы); маржа — после "
-        f"накладных, собственных расходов и налога; зелёный — не ниже цели "
-        f"{view.target_margin_pct:.0f}%."
-    )
-else:
-    st.info("Нет этапов для анализа.")
-
-with st.expander("Исполнители"):
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Этап": line.stage_name,
-                    "Исполнитель": f"{line.employee_name} ({ROLE_LABELS[line.role]})",
-                    "Часы": f"{line.hours:,.1f}",
-                    f"Ставка, {sym}/ч": f"{line.billing_rate:,.0f}",
-                    f"Себестоимость часа, {sym}": f"{line.cost_rate:,.0f}",
-                    f"Трудозатраты, {sym}": f"{line.labor_cost:,.0f}",
-                }
-                for line in result.lines
-            ]
-        ),
-        width="stretch",
-        hide_index=True,
-    )
-
-if result.disbursements:
-    st.markdown("#### Расходы проекта")
-    st.dataframe(
-        pd.DataFrame(
-            [
-                {
-                    "Название": item.name,
-                    "Тип": EXPENSE_TYPE_LABELS[item.kind],
-                    "Этап": item.stage or "—",
-                    "Сумма": f"{item.original_amount:,.0f} {item.original_currency.value}",
-                    f"В валюте проекта, {sym}": f"{item.amount:,.0f}",
-                }
-                for item in result.disbursements
-            ]
-        ),
-        width="stretch",
-        hide_index=True,
-    )
-
-st.markdown("---")
-render_profitability(
-    view.profitability,
-    "❌ Проект убыточен — пересмотрите цену, часы или состав команды.",
-)
-render_estimate_download(result)
+if tab_estimate.open:
+    with tab_estimate:
+        render_estimate(scenario, estimate)
+if tab_sensitivity.open:
+    with tab_sensitivity:
+        sensitivity_tab.render(scenario, estimate)
+nav.footer(nav.RESULT)

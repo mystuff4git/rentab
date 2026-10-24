@@ -1,19 +1,19 @@
-"""Страница 02: проект и смета (страница v0.3 на ядре, методология фаз 2–3).
+"""Шаг 2 «Проект»: этапы и исполнители, цена, НДС, пошлины и расходы.
 
 Страница собирает этапы с исполнителями (на этапе их может быть несколько),
-пошлины и расходы проекта, модель цены и режим НДС, а по кнопке
-«Рассчитать смету» вызывает `rentab_core.calculate_estimate`. Вся
-математика — в ядре; здесь только ввод и показ. Проектов в сессии несколько:
-активный выбирается в боковой панели (`ui.projects`).
+пошлины и расходы проекта, модель цены и режим НДС. Внизу — сводка сметы по
+текущим данным (`rentab_core.calculate_estimate`): кнопки «Рассчитать» нет,
+смета пересчитывается при каждом изменении. Подробности — на шаге
+«Результат». Вся математика — в ядре; здесь только ввод и показ. Проектов в
+сессии несколько: активный выбирается в боковой панели (`ui.projects`).
 """
 
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
-from pydantic import ValidationError
 
-from rentab_core import CurrencyConversionError, FixedPriceError, calculate_estimate
+from rentab_core import CurrencyConversionError
+from rentab_core.analysis.stages import classify
 from rentab_core.analysis.team import blended_rate, leverage
 from rentab_core.duties import (
     APPLICANT_CATEGORY_LABELS,
@@ -26,7 +26,6 @@ from rentab_core.duties import (
 )
 from rentab_core.estimate import resolve_stages
 from rentab_core.models import (
-    ROLE_LABELS,
     Assignment,
     Country,
     Disbursement,
@@ -36,39 +35,43 @@ from rentab_core.models import (
     Stage,
     VatMode,
 )
-from rentab_core.money import CURRENCY_SYMBOLS, PERCENT, Currency, decimal_sum, to_decimal
-from ui import state
+from rentab_core.money import CURRENCY_SYMBOLS, Currency, decimal_sum, to_decimal
+from rentab_core.results import Estimate, StageFlag
+from ui import formulas, nav, state
+from ui.analytics import require_firm, scenario_regime
+from ui.components import FLAG_STATUS, Kpi, Table, empty_state, kpi_grid, render_table
 from ui.labels import (
     COUNTRY_LABELS,
     CUSTOM_EXPENSE_LABELS,
+    DASH,
     NEEDS_REVIEW_MARK,
     PATENT_OFFICE_LABELS,
     PRICING_LABELS,
     VAT_MODE_LABELS,
+    employee_title,
+    hours_label,
     money,
+    money_rate,
+    number_label,
+    pct_label,
 )
-from ui.projects import render_project_switcher
 
 # Шаг слайдера и поля целевой маржи, % (границы — ui.state).
 TARGET_MARGIN_STEP_PCT = 1
 NEW_STAGE = "➕ Новый этап"
 NO_STAGE = "Без привязки (по теневой стоимости)"
 
-state.init_defaults()
-state.persist_widgets()
-render_project_switcher()
+LEVERAGE_QUANTUM = to_decimal("0.01")
 
-st.title("📋 Проект и смета")
-
+st.title("Проект")
+st.caption(
+    "Шаг 2: этапы и исполнители, модель цены и НДС, пошлины и расходы. Смета "
+    "пересчитывается сразу — сводка внизу, подробности на шаге «Результат»."
+)
+require_firm("project")
 team = state.team()
-if not team:
-    st.warning("Сначала заполните состав команды на странице **01 Настройка → Команда**.")
-    st.stop()
-
 jurisdiction = state.jurisdiction()
-if jurisdiction is None:
-    st.warning("Сначала выберите юрисдикцию на странице **01 Настройка → Юрисдикция и налоги**.")
-    st.stop()
+assert jurisdiction is not None  # require_firm остановил бы страницу
 
 # ===========================================================================
 # БЛОК 0 — ЮРИСДИКЦИЯ РАСЧЁТА (режим «Оба») И ВАЛЮТА ПРОЕКТА
@@ -89,7 +92,7 @@ currency_symbol = CURRENCY_SYMBOLS[calc_country.currency]
 # ===========================================================================
 # БЛОК 1 — ОБЩИЕ ДАННЫЕ ПРОЕКТА
 # ===========================================================================
-st.subheader("1. Данные проекта")
+st.subheader("Данные проекта")
 col_name, col_client = st.columns([2, 1])
 with col_name:
     project_name = st.text_input(
@@ -106,12 +109,10 @@ st.text_area(
     key=state.PROJECT_DESCRIPTION,
 )
 
-st.markdown("---")
-
 # ===========================================================================
 # БЛОК 2 — ЭТАПЫ И ИСПОЛНИТЕЛИ
 # ===========================================================================
-st.subheader("2. Этапы и исполнители")
+st.subheader("Этапы и исполнители")
 st.caption(
     "На этапе может быть несколько исполнителей: например, юрист готовит ответ "
     "10 ч, партнёр проверяет 2 ч. Выберите существующий этап, чтобы добавить "
@@ -174,43 +175,61 @@ if assignment_message is not None:
     kind_, text_ = assignment_message
     (st.success if kind_ == "success" else st.error)(text_)
 
+
+def delete_assignment(stage_idx: int, assignment_idx: int) -> None:
+    """Колбэк 🗑: убрать исполнителя с этапа; последний — вместе с этапом."""
+    current = state.stages()
+    stage = current[stage_idx]
+    remaining = tuple(a for i, a in enumerate(stage.assignments) if i != assignment_idx)
+    if remaining:
+        current[stage_idx] = stage.model_copy(update={"assignments": remaining})
+        return
+    # Этап удалён: привязанные к нему расходы делятся по всем этапам, факт по нему удаляется.
+    current.pop(stage_idx)
+    state.drop_stage_actuals(stage.name)
+    expenses = state.custom_expenses()
+    expenses[:] = [
+        item.model_copy(update={"stage": None}) if item.stage == stage.name else item
+        for item in expenses
+    ]
+
+
 team_by_name = {member.name: member for member in team}
 if not stages:
-    st.info("Пока нет этапов. Добавьте первый этап через форму выше.")
-else:
-    for stage_idx, stage in enumerate(list(stages)):
-        total = decimal_sum(a.hours for a in stage.assignments)
-        st.markdown(f"**{stage_idx + 1}. {stage.name}** · {total:.1f} ч")
+    empty_state(
+        "stages",
+        "🗂️",
+        "Пока нет этапов",
+        "Добавьте первый этап формой выше: название этапа, исполнитель и часы. На этап можно "
+        "добавить несколько исполнителей.",
+    )
+for stage_idx, stage in enumerate(stages):
+    total = decimal_sum(a.hours for a in stage.assignments)
+    with st.container(border=True, key=f"stage-{stage_idx}"):
+        st.markdown(f"**{stage_idx + 1}. {stage.name}** · {hours_label(total)}")
         for assignment_idx, assignment in enumerate(stage.assignments):
             member = team_by_name.get(assignment.employee)
-            c1, c2, c3, c4 = st.columns([2.5, 0.8, 1.2, 0.5])
+            col_who, col_hours, col_value, col_delete = st.columns(
+                [2.5, 0.8, 1.4, 0.4], vertical_alignment="center"
+            )
             if member is None:
-                c1.warning(
+                col_who.warning(
                     f"Исполнителя «{assignment.employee}» нет в составе команды: "
                     "назначение не войдёт в расчёт."
                 )
             else:
-                c1.write(f"{member.name} ({ROLE_LABELS[member.role]})")
+                col_who.write(employee_title(member.name, member.role))
                 sym = CURRENCY_SYMBOLS[member.currency]
-                c3.write(f"{member.billing_rate * assignment.hours:,.0f} {sym} по ставке")
-            c2.write(f"{assignment.hours:.1f} ч")
-            if c4.button("🗑", key=f"del_assignment_{stage_idx}_{assignment_idx}", help="Удалить"):
-                remaining = tuple(a for i, a in enumerate(stage.assignments) if i != assignment_idx)
-                if remaining:
-                    stages[stage_idx] = stage.model_copy(update={"assignments": remaining})
-                else:
-                    # Этап удалён: привязанные к нему расходы делятся по всем этапам,
-                    # факт по нему удаляется.
-                    stages.pop(stage_idx)
-                    state.drop_stage_actuals(stage.name)
-                    expenses = state.custom_expenses()
-                    expenses[:] = [
-                        item.model_copy(update={"stage": None})
-                        if item.stage == stage.name
-                        else item
-                        for item in expenses
-                    ]
-                st.rerun()
+                col_value.write(f"{money(member.billing_rate * assignment.hours, sym)} по ставке")
+            col_hours.write(hours_label(assignment.hours))
+            col_delete.button(
+                "",
+                icon=":material/delete:",
+                key=f"del_assignment_{stage_idx}_{assignment_idx}",
+                help="Удалить",
+                on_click=delete_assignment,
+                args=(stage_idx, assignment_idx),
+            )
 
 # Показатели команды пересчитываются ядром на каждом изменении этапов.
 try:
@@ -218,24 +237,42 @@ try:
         state.firm(), Project(stages=tuple(stages)), calc_country.currency, calc_country
     )
 except CurrencyConversionError as exc:
-    st.warning(f"{exc}. Курсы задаются на странице «Настройка».")
+    st.warning(f"{exc}. Курсы задаются на шаге «Фирма».")
     resolved = []
 lines = [line for stage_lines in resolved for line in stage_lines.lines]
-col_m1, col_m2, col_m3 = st.columns(3)
-col_m1.metric(f"Средневзвешенная ставка, {currency_symbol}/ч", f"{blended_rate(lines):,.0f}")
-col_m2.metric(
-    "Коэффициент рычага",
-    f"{leverage(lines):.2f}",
-    help="Часы младших / часы старших. Выше — выше маржа.",
-)
-col_m3.metric("Всего часов", f"{decimal_sum(line.hours for line in lines):.1f}")
-
-st.markdown("---")
+if lines:
+    hours_total = decimal_sum(line.hours for line in lines)
+    shadow_total = decimal_sum(line.shadow_value for line in lines)
+    blended = blended_rate(lines)
+    lever = leverage(lines)
+    kpi_grid(
+        [
+            Kpi(
+                "project-blended",
+                "Средневзвешенная ставка",
+                money_rate(blended, currency_symbol),
+                formulas.blended_rate(shadow_total, hours_total, blended, currency_symbol),
+            ),
+            Kpi(
+                "project-leverage",
+                "Коэффициент рычага",
+                number_label(lever, LEVERAGE_QUANTUM),
+                formulas.leverage(lines, lever),
+            ),
+            Kpi(
+                "project-hours",
+                "Всего часов",
+                hours_label(hours_total),
+                formulas.project_hours(hours_total),
+            ),
+        ],
+        columns=3,
+    )
 
 # ===========================================================================
 # БЛОК 3 — ЦЕНА
 # ===========================================================================
-st.subheader("3. Цена")
+st.subheader("Цена")
 st.radio(
     "Модель ценообразования",
     options=list(state.PRICING_KINDS),
@@ -316,8 +353,6 @@ with col_input:
         help="Точное значение — приоритет над слайдером.",
     )
 
-st.markdown("---")
-
 # ===========================================================================
 # БЛОК 4 — РАСХОДЫ ПРОЕКТА
 # ===========================================================================
@@ -329,7 +364,7 @@ def project_duties(country: Country) -> list[Disbursement]:
     return state.duty_selection(country).disbursements(country)
 
 
-with st.expander("4. Расходы проекта — пошлины, субподряд и др. (необязательно)"):
+with st.expander("Расходы проекта — пошлины, субподряд и др. (необязательно)"):
     st.markdown("#### Пошлины из каталога")
     st.caption(
         "Пошлины — возмещаемые расходы: клиент их оплачивает отдельной строкой, "
@@ -393,12 +428,15 @@ with st.expander("4. Расходы проекта — пошлины, субп�
                 )
         items = project_duties(country)
         if items:
-            st.dataframe(
-                pd.DataFrame(
-                    [{"Пошлина": item.name, "Сумма": money(item.amount, sym)} for item in items]
-                ),
-                hide_index=True,
-                width="stretch",
+            render_table(
+                Table(
+                    columns=["Пошлина", "Сумма"],
+                    rows=[
+                        {"Пошлина": item.name, "Сумма": money(item.amount, sym)} for item in items
+                    ],
+                    numeric=frozenset({"Сумма"}),
+                    key=f"duties-{country.value}",
+                )
             )
             subtotal = decimal_sum(item.amount for item in items)
             vat_note = ", с НДС" if catalog.vat_included else ""
@@ -415,7 +453,7 @@ with st.expander("4. Расходы проекта — пошлины, субп�
             if duty.amount > 0:
                 st.caption(f"{NEEDS_REVIEW_MARK} {duty.action}: {duty.note}")
 
-    st.markdown("---")
+    st.divider()
     st.markdown("#### Произвольный расход")
     st.caption(
         "Собственный расход (курьер, нотариальный перевод, командировка) уменьшает "
@@ -462,95 +500,100 @@ with st.expander("4. Расходы проекта — пошлины, субп�
                 )
                 st.success(f"Добавлен расход: {ce_name}")
 
+    def delete_expense(index: int) -> None:
+        """Колбэк 🗑: удалить произвольный расход."""
+        state.custom_expenses().pop(index)
+
     custom_list = state.custom_expenses()
     if custom_list:
         st.markdown("**Текущие произвольные расходы**")
-        for idx, item in enumerate(list(custom_list)):
-            c1, c2, c3, c4, c5 = st.columns([2, 2, 1, 1.5, 0.5])
-            c1.write(f"**{item.name}**")
-            c2.write(CUSTOM_EXPENSE_LABELS[item.kind])
-            c3.write(f"{item.amount:,.0f} {item.currency.value}")
-            c4.write(item.stage or "—")
-            if c5.button("🗑", key=f"del_custom_{idx}", help="Удалить"):
-                custom_list.pop(idx)
-                st.rerun()
+    for idx, item in enumerate(custom_list):
+        col_name_, col_kind, col_amount, col_stage, col_delete = st.columns(
+            [2, 2, 1, 1.5, 0.5], vertical_alignment="center"
+        )
+        col_name_.write(f"**{item.name}**")
+        col_kind.write(CUSTOM_EXPENSE_LABELS[item.kind])
+        col_amount.write(money(item.amount, CURRENCY_SYMBOLS[item.currency]))
+        col_stage.write(item.stage or DASH)
+        col_delete.button(
+            "",
+            icon=":material/delete:",
+            key=f"del_custom_{idx}",
+            help="Удалить",
+            on_click=delete_expense,
+            args=(idx,),
+        )
 
-st.markdown("---")
-
-# ===========================================================================
-# БЛОК 5 — РАСЧЁТ
-# ===========================================================================
-st.subheader("5. Рассчитать смету")
-calc_disabled = not (project_name.strip() and any(stage.assignments for stage in stages))
-if calc_disabled:
-    st.caption(
-        "Чтобы рассчитать смету, укажите название проекта и добавьте хотя бы один этап с часами."
-    )
-
-if st.button("💰 Рассчитать смету", type="primary", disabled=calc_disabled):
-    try:
-        st.session_state[state.ESTIMATE] = calculate_estimate(state.scenario())
-    except FixedPriceError as exc:
-        st.error(f"Не удалось рассчитать фиксированную цену: {exc}")
-        st.stop()
-    except CurrencyConversionError as exc:
-        st.error(f"{exc}. Курсы задаются на странице «Настройка».")
-        st.stop()
-    except ValidationError:
-        st.error("Укажите потолок или согласованную цену больше нуля.")
-        st.stop()
 
 # ===========================================================================
-# БЛОК 6 — ПРЕДВАРИТЕЛЬНЫЙ РЕЗУЛЬТАТ
+# БЛОК 5 — СВОДКА СМЕТЫ ПО ТЕКУЩИМ ДАННЫМ
 # ===========================================================================
-result = state.estimate()
-if result is not None:
-    st.markdown("### Предварительный результат")
-    sym = CURRENCY_SYMBOLS[result.currency]
-    p1, p2, p3, p4 = st.columns(4)
-    p1.metric(f"Выручка без НДС, {sym}", f"{result.revenue:,.0f}")
-    p2.metric(f"НДС, {sym}", f"{result.vat:,.0f}")
-    p3.metric(f"К оплате клиентом, {sym}", f"{result.total_client:,.0f}")
-    p4.metric(
-        f"Чистая прибыль (NNE), {sym}",
-        f"{result.nne:,.0f}",
-        delta=f"{result.margin * PERCENT:.1f}% маржа · цель {result.target_margin * PERCENT:.0f}%",
-    )
-    st.caption(
-        f"Режим: {result.regime_label} · Все издержки: {result.total_costs:,.0f} {sym} · "
-        f"Налог: {result.tax.tax:,.0f} {sym} · Возмещаемые расходы: "
-        f"{result.disbursements_billed:,.0f} {sym}"
-    )
-    if result.tax.deduction > 0:
-        capped = " — упёрлось в предел 50%" if result.tax.deduction_capped else ""
+st.subheader("Смета проекта")
+if not project_name.strip():
+    st.caption("Название проекта попадёт в смету XLSX и в список проектов.")
+if not any(stage.assignments for stage in stages):
+    st.caption("Смета появится, когда в проекте будет хотя бы один этап с часами.")
+else:
+    outcome = state.estimate_outcome(state.scenario)
+    if not isinstance(outcome, Estimate):
+        st.error(outcome, icon="⛔")
+    else:
+        result = outcome
+        sym = CURRENCY_SYMBOLS[result.currency]
+        flag: StageFlag = classify(result.margin, result.target_margin)
+        kpi_grid(
+            [
+                Kpi(
+                    "summary-revenue",
+                    "Выручка без НДС",
+                    money(result.revenue, sym),
+                    formulas.revenue(result),
+                ),
+                Kpi(
+                    "summary-total",
+                    "К оплате клиентом",
+                    money(result.total_client, sym),
+                    formulas.total_client(result),
+                    caption=f"НДС {money(result.vat, sym)} · возмещаемые "
+                    f"{money(result.disbursements_billed, sym)}",
+                ),
+                Kpi(
+                    "summary-nne",
+                    "Чистая прибыль (NNE)",
+                    money(result.nne, sym),
+                    formulas.nne(result),
+                    status=FLAG_STATUS[flag],
+                ),
+                Kpi(
+                    "summary-margin",
+                    "Маржа NNE",
+                    pct_label(result.margin),
+                    formulas.margin(result),
+                    status=FLAG_STATUS[flag],
+                    caption=f"цель {pct_label(result.target_margin, to_decimal(1))}",
+                ),
+            ]
+        )
         st.caption(
-            f"Налог УСН «доходы» уменьшен на страховые взносы на часах проекта: "
-            f"{money(result.tax.deduction, sym)} из {money(result.tax.contributions, sym)}{capped}."
+            f"Режим: {scenario_regime(state.scenario())} · издержки "
+            f"{money(result.total_costs, sym)} · налог {money(result.tax.tax, sym)}"
         )
-    if result.tax.nondeductible > 0:
-        st.caption(
-            f"Вознаграждение из прибыли {money(result.tax.nondeductible, sym)} не уменьшает "
-            "базу налога «доходы − расходы»."
-        )
-    for missing in result.unresolved_assignments:
-        st.warning(
-            f"Этап «{missing.stage_name}»: исполнителя «{missing.employee}» нет в команде, "
-            "назначение не вошло в расчёт."
-        )
+        if result.tax.deduction > 0:
+            capped = " — упёрлось в предел 50%" if result.tax.deduction_capped else ""
+            st.caption(
+                f"Налог УСН «доходы» уменьшен на страховые взносы на часах проекта: "
+                f"{money(result.tax.deduction, sym)} из {money(result.tax.contributions, sym)}"
+                f"{capped}."
+            )
+        if result.tax.nondeductible > 0:
+            st.caption(
+                f"Вознаграждение из прибыли {money(result.tax.nondeductible, sym)} не уменьшает "
+                "базу налога «доходы − расходы»."
+            )
+        for missing in result.unresolved_assignments:
+            st.warning(
+                f"Этап «{missing.stage_name}»: исполнителя «{missing.employee}» нет в команде, "
+                "назначение не вошло в расчёт."
+            )
 
-    st.page_link("pages/03_Дашборд.py", label="📊 Перейти к дашборду", icon="➡️")
-
-    with st.expander("Детали расчёта"):
-        rows = [
-            {
-                "Этап": line.stage_name,
-                "Сотрудник": line.employee_name,
-                "Роль": ROLE_LABELS[line.role],
-                "Часы": float(line.hours),
-                f"Себестоимость часа, {sym}": float(line.cost_rate),
-                f"Трудозатраты, {sym}": float(line.labor_cost),
-                f"По ставке, {sym}": float(line.shadow_value),
-            }
-            for line in result.lines
-        ]
-        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+nav.footer(nav.PROJECT)

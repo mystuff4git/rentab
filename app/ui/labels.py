@@ -1,6 +1,10 @@
-"""Русские подписи перечислений ядра для интерфейса (как в v0.3).
+"""Русские подписи перечислений ядра и формат чисел интерфейса.
 
 Проценты в подписях берутся из реестра ставок ядра, а не пишутся вручную.
+Числа — «1 234 567 ₽»: разряды и знак валюты отделяются неразрывным пробелом
+(число не переносится на узком экране), отрицательные значения — с минусом
+«−». Исключение — дельты `st.metric`: Streamlit выбирает стрелку и цвет по
+ведущему ASCII-минусу.
 """
 
 from __future__ import annotations
@@ -12,7 +16,9 @@ from rentab_core.analysis.compare import PricingKind
 from rentab_core.analysis.dashboard import Profitability
 from rentab_core.analysis.plan_fact import BillingRule
 from rentab_core.analysis.sensitivity import Factor, TaxBranch, TornadoNote
+from rentab_core.errors import FixedPriceError
 from rentab_core.models import (
+    ROLE_LABELS,
     AusnProfile,
     Country,
     DisbursementKind,
@@ -24,6 +30,7 @@ from rentab_core.models import (
     NpdClientType,
     NpdProfile,
     OsnoProfile,
+    Role,
     SocialContributions,
     TaxProfile,
     UsnObject,
@@ -84,15 +91,22 @@ EXPENSE_TYPE_LABELS: Mapping[DisbursementKind, str] = {
     DisbursementKind.BILLABLE: "Возмещается клиентом",
     DisbursementKind.OWN: "За счёт фирмы",
 }
+# Светофор: цвет всегда вместе со значком и подписью.
 STAGE_FLAG_LABELS: Mapping[StageFlag, str] = {
-    StageFlag.GREEN: "🟢 Норма",
-    StageFlag.YELLOW: "🟡 Низкая маржа",
-    StageFlag.RED: "🔴 Убыточный",
+    StageFlag.GREEN: "Норма",
+    StageFlag.YELLOW: "Низкая маржа",
+    StageFlag.RED: "Убыточный",
 }
-STAGE_FLAG_BG_COLORS: Mapping[StageFlag, str] = {
-    StageFlag.GREEN: "",
-    StageFlag.YELLOW: "background-color: #fef3c7",
-    StageFlag.RED: "background-color: #fee2e2",
+STAGE_FLAG_ICONS: Mapping[StageFlag, str] = {
+    StageFlag.GREEN: "●",
+    StageFlag.YELLOW: "▲",
+    StageFlag.RED: "✕",
+}
+# Цвет бейджа Streamlit (`:green-badge[…]`): тема задаёт его для светлой и тёмной.
+STAGE_FLAG_BADGE_COLORS: Mapping[StageFlag, str] = {
+    StageFlag.GREEN: "green",
+    StageFlag.YELLOW: "orange",
+    StageFlag.RED: "red",
 }
 LEGAL_FORM_LABELS: Mapping[LegalForm, str] = {
     LegalForm.ORGANIZATION: "Организация (ООО и др.)",
@@ -110,9 +124,13 @@ NEEDS_REVIEW_MARK = "⚠️"
 LABEL_QUANTUM = Decimal(1)
 HOURS_QUANTUM = Decimal("0.1")
 PROFITABILITY_MESSAGES: Mapping[Profitability, str] = {
-    Profitability.PROFITABLE: "✅ Проект рентабелен",
-    Profitability.BREAKEVEN: "⚠️ Проект в точке безубыточности",
+    Profitability.PROFITABLE: "Проект рентабелен",
+    Profitability.BREAKEVEN: "Проект в точке безубыточности",
+    Profitability.LOSS: "Проект убыточен",
 }
+NBSP = "\u00a0"
+MINUS = "\u2212"
+DASH = "—"
 
 
 def rf_rate_pct(key: str) -> str:
@@ -125,14 +143,39 @@ def rate_pct(country: Country, key: str) -> str:
     return format_number(rate(country, key) * PERCENT)
 
 
-def money(value: Decimal, symbol: str) -> str:
-    """Сумма для подписи: «1 234 567 ₽», округление до рубля (тенге)."""
-    return f"{format_number(round_to(value, LABEL_QUANTUM))} {symbol}"
+def number_text(value: Decimal) -> str:
+    """Число для интерфейса без округления: «1 234 567», «−2 200», «0,5»."""
+    if value == 0:
+        value = abs(value)
+    return format_number(value).replace(" ", NBSP).replace("-", MINUS)
+
+
+def number_label(value: Decimal, quantum: Decimal = LABEL_QUANTUM) -> str:
+    """Число с округлением «половина вверх» и знаками шага: «1 234 567», «7,00», «−0,73»."""
+    rounded = round_to(value, quantum)
+    if rounded == 0:
+        rounded = abs(rounded)
+    integer, _, fraction = f"{rounded:f}".partition(".")
+    sign = MINUS if integer.startswith("-") else ""
+    digits = integer.lstrip("-")
+    groups = [digits[max(i - 3, 0) : i] for i in range(len(digits), 0, -3)][::-1]
+    text = sign + NBSP.join(groups)
+    return f"{text},{fraction}" if fraction else text
+
+
+def money(value: Decimal, symbol: str, quantum: Decimal = LABEL_QUANTUM) -> str:
+    """Сумма для подписи: «1 234 567 ₽», по умолчанию до рубля (тенге)."""
+    return f"{number_label(value, quantum)}{NBSP}{symbol}"
+
+
+def money_rate(value: Decimal, symbol: str, quantum: Decimal = LABEL_QUANTUM) -> str:
+    """Сумма за час: «4 125 ₽/ч»."""
+    return f"{money(value, symbol, quantum)}/ч"
 
 
 def registry_amount(country: Country, key: str) -> str:
     """Порог из реестра числом для подписи: «60 000 000», «5»."""
-    return format_number(amount(country, key))
+    return number_text(amount(country, key))
 
 
 def kz_rate_pct(key: str) -> str:
@@ -212,6 +255,19 @@ def regime_label(profile: TaxProfile) -> str:
     return name + kz_vat_suffix(profile.vat)
 
 
+def fixed_price_error(exc: FixedPriceError, profile: TaxProfile) -> str:
+    """Почему цену «издержки + маржа» не рассчитать — с подписью режима интерфейса (L-18)."""
+    if exc.target_margin is None or exc.tax_rate is None:
+        return str(exc)
+    one_decimal = Decimal("0.1")
+    total = exc.target_margin + exc.tax_rate
+    return (
+        f"целевая маржа {pct_label(exc.target_margin, one_decimal)} недостижима при режиме "
+        f"«{regime_label(profile)}»: маржа + ставка налога = {pct_label(total, one_decimal)} "
+        "≥ 100%."
+    )
+
+
 # Аналитика (страницы «Чувствительность», «Сравнение», «План–факт»).
 TAX_BRANCH_LABELS: Mapping[TaxBranch, str] = {
     TaxBranch.INCOME: "налог с выручки",
@@ -256,44 +312,47 @@ COMPARE_METRICS: Mapping[str, str] = {
 }
 
 
+PCT_QUANTUM = Decimal("0.01")
+
+
+def _sign(rounded: Decimal, minus: str = MINUS) -> str:
+    return "+" if rounded > 0 else (minus if rounded < 0 else "")
+
+
 def hours_label(value: Decimal) -> str:
-    """Часы для подписи: «159,6 ч»."""
-    return f"{format_number(round_to(value, HOURS_QUANTUM))} ч"
+    """Часы для подписи: «159,6 ч», «40 ч» (без лишнего нуля)."""
+    return f"{number_text(round_to(value, HOURS_QUANTUM))}{NBSP}ч"
 
 
 def signed_hours(value: Decimal) -> str:
     """Часы со знаком: «+55 ч», «−0,5 ч»."""
     rounded = round_to(value, HOURS_QUANTUM)
-    sign = "+" if rounded > 0 else ("−" if rounded < 0 else "")
-    return f"{sign}{format_number(abs(rounded))} ч"
+    return f"{_sign(rounded)}{number_text(abs(rounded))}{NBSP}ч"
 
 
 def signed_money(value: Decimal, symbol: str) -> str:
     """Сумма со знаком: «+5 650 ₽», «−227 700 ₽»."""
     rounded = round_to(value, LABEL_QUANTUM)
-    sign = "+" if rounded > 0 else ("−" if rounded < 0 else "")
-    return f"{sign}{format_number(abs(rounded))} {symbol}"
+    return f"{_sign(rounded)}{number_text(abs(rounded))}{NBSP}{symbol}"
 
 
-def pct_label(share: Decimal | None, quantum: Decimal = Decimal("0.01")) -> str:
-    """Доля в процентах: «75,17%»; None — «—»."""
+def pct_label(share: Decimal | None, quantum: Decimal = PCT_QUANTUM) -> str:
+    """Доля в процентах: «75,17%», «−0,73%»; None — «—»."""
     if share is None:
-        return "—"
-    return f"{format_number(round_to(share * PERCENT, quantum))}%"
+        return DASH
+    return f"{number_label(share * PERCENT, quantum)}%"
 
 
 def signed_pct(share: Decimal, quantum: Decimal = Decimal(1)) -> str:
     """Доля в процентах со знаком: «+399%»."""
     rounded = round_to(share * PERCENT, quantum)
-    sign = "+" if rounded > 0 else ("−" if rounded < 0 else "")
-    return f"{sign}{format_number(abs(rounded))}%"
+    return f"{_sign(rounded)}{number_label(abs(rounded), quantum)}%"
 
 
 def points_label(delta: Decimal) -> str:
     """Разница долей в процентных пунктах: «−75,90 п. п.»."""
-    rounded = round_to(delta * PERCENT, Decimal("0.01"))
-    sign = "+" if rounded > 0 else ("−" if rounded < 0 else "")
-    return f"{sign}{format_number(abs(rounded))} п. п."
+    rounded = round_to(delta * PERCENT, PCT_QUANTUM)
+    return f"{_sign(rounded)}{number_label(abs(rounded), PCT_QUANTUM)}{NBSP}п.{NBSP}п."
 
 
 def metric_delta(value: Decimal, symbol: str) -> str | None:
@@ -304,14 +363,24 @@ def metric_delta(value: Decimal, symbol: str) -> str | None:
     rounded = round_to(value, LABEL_QUANTUM)
     if rounded == 0:
         return None
-    sign = "+" if rounded > 0 else "-"
-    return f"{sign}{format_number(abs(rounded))} {symbol}"
+    return f"{_sign(rounded, '-')}{number_text(abs(rounded))}{NBSP}{symbol}"
 
 
 def metric_points(delta: Decimal) -> str | None:
     """Дельта доли для `st.metric` в процентных пунктах; None — без изменения."""
-    rounded = round_to(delta * PERCENT, Decimal("0.01"))
+    rounded = round_to(delta * PERCENT, PCT_QUANTUM)
     if rounded == 0:
         return None
-    sign = "+" if rounded > 0 else "-"
-    return f"{sign}{format_number(abs(rounded))} п. п."
+    return f"{_sign(rounded, '-')}{number_label(abs(rounded), PCT_QUANTUM)}{NBSP}п.{NBSP}п."
+
+
+def employee_title(name: str, role: Role) -> str:
+    """Сотрудник с ролью: «Юрист (Младший юрист)»; роль не повторяется, если это и есть имя."""
+    label = ROLE_LABELS[role]
+    return name if name == label else f"{name} ({label})"
+
+
+def flag_badge(flag: StageFlag) -> str:
+    """Статус светофора для Markdown: бейдж темы со значком и подписью."""
+    color = STAGE_FLAG_BADGE_COLORS[flag]
+    return f":{color}-badge[{STAGE_FLAG_ICONS[flag]} {STAGE_FLAG_LABELS[flag]}]"
