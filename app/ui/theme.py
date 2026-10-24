@@ -91,25 +91,28 @@ CSS = f"""
 .rt-table td.rt-current {{ background: var(--rt-tint); box-shadow: inset 0 -2px 0 var(--rt-line); }}
 .rt-table .rt-note {{ display: block; opacity: 0.7; font-size: 0.85em; }}
 @media (max-width: {NARROW_SCREEN_PX}px) {{
-  .rt-table thead {{ display: none; }}
-  .rt-table table, .rt-table tbody {{ display: block; }}
-  .rt-table tr {{
+  [class*="st-key-kpi-"] [data-testid="stMetricValue"] {{ font-size: 1.75rem; }}
+  .rt-flat table {{ font-size: 0.85rem; }}
+  .rt-flat th, .rt-flat td {{ padding: 0.35rem 0.25rem; }}
+  .rt-table:not(.rt-flat) thead {{ display: none; }}
+  .rt-table:not(.rt-flat) table, .rt-table:not(.rt-flat) tbody {{ display: block; }}
+  .rt-table:not(.rt-flat) tr {{
     display: block; border: 1px solid var(--rt-line); border-radius: 0.5rem;
     padding: 0.35rem 0.7rem; margin-bottom: 0.6rem;
   }}
-  .rt-table td {{
+  .rt-table:not(.rt-flat) td {{
     display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem;
     border: none; padding: 0.15rem 0; text-align: right;
   }}
-  .rt-table td::before {{
+  .rt-table:not(.rt-flat) td::before {{
     content: attr(data-label); opacity: 0.7; text-align: left; flex: 0 1 50%;
   }}
-  .rt-table td.rt-lead {{
+  .rt-table:not(.rt-flat) td.rt-lead {{
     display: block; text-align: left; font-weight: 700; padding-bottom: 0.3rem;
   }}
-  .rt-table td.rt-lead::before {{ content: none; }}
-  .rt-table td:empty {{ display: none; }}
-  .rt-table .num {{ white-space: normal; }}
+  .rt-table:not(.rt-flat) td.rt-lead::before {{ content: none; }}
+  .rt-table:not(.rt-flat) td:empty {{ display: none; }}
+  .rt-table:not(.rt-flat) .num {{ white-space: normal; }}
 }}
 </style>
 """

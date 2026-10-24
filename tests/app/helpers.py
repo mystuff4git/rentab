@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 from typing import Any
 
@@ -144,10 +145,14 @@ class _TableParser(HTMLParser):
         (self._note if self._in_note else self._text).append(data)
 
 
+def _is_table(body: str, key: str) -> bool:
+    """HTML — таблица аналитики с этим ключом (с классом «плоской» таблицы или без)."""
+    return re.search(rf'class="rt-table rt-table--{re.escape(key)}( rt-flat)?"', body) is not None
+
+
 def table(app: AppTest, key: str) -> _TableParser:
     """Таблица аналитики по ключу (`Table.key`)."""
-    marker = f'class="rt-table rt-table--{key}"'
-    bodies = [item.value for item in app.html if marker in item.value]
+    bodies = [item.value for item in app.html if _is_table(item.value, key)]
     assert len(bodies) == 1, f"таблица «{key}»: найдено {len(bodies)}"
     parser = _TableParser()
     parser.feed(bodies[0])
@@ -161,4 +166,4 @@ def column(app: AppTest, key: str, name: str) -> list[str]:
 
 def has_table(app: AppTest, key: str) -> bool:
     """Есть ли на странице таблица аналитики с ключом."""
-    return any(f'class="rt-table rt-table--{key}"' in item.value for item in app.html)
+    return any(_is_table(item.value, key) for item in app.html)

@@ -86,7 +86,7 @@ CUSTOM_EXPENSE_LABELS: Mapping[DisbursementKind, str] = {
     DisbursementKind.OWN: "Собственный расход фирмы (курьер, перевод, командировка…)",
     DisbursementKind.BILLABLE: "Возмещается клиентом (помимо пошлин)",
 }
-# Те же категории в таблице расходов «Дашборда».
+# Те же категории в таблице расходов «Результата».
 EXPENSE_TYPE_LABELS: Mapping[DisbursementKind, str] = {
     DisbursementKind.BILLABLE: "Возмещается клиентом",
     DisbursementKind.OWN: "За счёт фирмы",

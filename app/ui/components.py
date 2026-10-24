@@ -161,12 +161,15 @@ class Table:
         rows: Строки (словарь заголовок → ячейка или Row).
         numeric: Столбцы с числами (по правому краю, без переноса).
         key: CSS-класс таблицы для отличия в тестах и стилях.
+        stack: На узком экране строки становятся карточками; False — таблица
+            остаётся таблицей (для двух-четырёх узких столбцов).
     """
 
     columns: Sequence[str]
     rows: Sequence[Mapping[str, CellValue] | Row]
     numeric: frozenset[str] = field(default_factory=frozenset)
     key: str = ""
+    stack: bool = True
 
 
 def flag_html(flag: StageFlag) -> str:
@@ -218,6 +221,8 @@ def table_html(table: Table) -> str:
         )
         body.append(f"<tr{class_attr}>{cells}</tr>")
     key_class = f" rt-table--{table.key}" if table.key else ""
+    if not table.stack:
+        key_class += " rt-flat"
     return (
         f'<div class="rt-table{key_class}"><table><thead><tr>{head}</tr></thead>'
         f"<tbody>{''.join(body)}</tbody></table></div>"

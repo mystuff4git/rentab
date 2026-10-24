@@ -101,7 +101,7 @@ VAT_MODE = "vat_mode"
 CALC_COUNTRY = "calc_country_choice"
 # Вкладка страницы «Результат»: «Смета» или «Чувствительность».
 RESULT_TAB = "result_tab"
-# Виджеты юрисдикции на странице «Настройка».
+# Виджеты юрисдикции на шаге «Фирма».
 JURISDICTION_CHOICE = "jurisdiction_choice"
 RF_REGIME = "rf_regime_choice"
 RF_USN_OBJECT = "rf_usn_object"
@@ -183,12 +183,12 @@ PRICING_AGREED = "agreed"
 PRICING_KINDS = (PRICING_HOURLY, PRICING_CAPPED, PRICING_FIXED, PRICING_AGREED)
 
 # Курс «₽ за 1 ₸» по умолчанию — индикативный, как в v0.3; точный курс
-# загружается с сайта ЦБ РФ (НБРК) кнопкой на странице «Настройка» или вводится
+# загружается с сайта ЦБ РФ (НБРК) кнопкой на шаге «Фирма» или вводится
 # вручную. Курс доллара по умолчанию не задан: 0 — «нет курса».
 DEFAULT_RUB_PER_KZT = 0.18
 NO_RATE = 0.0
 DEFAULT_TARGET_MARGIN_PCT = int(DEFAULT_TARGET_MARGIN * PERCENT)
-# Поле и слайдер целевой маржи на странице «Проект», целые проценты
+# Поле и слайдер целевой маржи на шаге «Проект», целые проценты
 # (слайдер — как в v0.3, 02_Проект.py:67–70; поле допускает значения шире).
 TARGET_MARGIN_INPUT_MIN_PCT = 0
 TARGET_MARGIN_INPUT_MAX_PCT = 99
@@ -388,7 +388,7 @@ def selected_duties() -> dict[str, list[str]]:
 
 
 def jurisdiction(values: Values | None = None) -> Jurisdiction | None:
-    """Юрисдикция, выбранная на странице «Настройка»; None — ещё не выбрана."""
+    """Юрисдикция, выбранная на шаге «Фирма»; None — ещё не выбрана."""
     value = _values(values).get(JURISDICTION)
     return value if isinstance(value, Jurisdiction) else None
 
@@ -420,7 +420,7 @@ def _rate(key: str, default: float, values: Values) -> Decimal | None:
 
 
 def exchange_rates(values: Values | None = None) -> ExchangeRates:
-    """Курсы валют фирмы со страницы «Настройка»."""
+    """Курсы валют фирмы с шага «Фирма»."""
     values = _values(values)
     return ExchangeRates(
         rub_per_kzt=_rate(RUB_PER_KZT, DEFAULT_RUB_PER_KZT, values),
@@ -454,7 +454,7 @@ def firm_facts(values: Values | None = None) -> FirmFacts:
 
 
 def firm(values: Values | None = None) -> Firm:
-    """Фирма из данных страницы «Настройка»."""
+    """Фирма из данных шага «Фирма»."""
     values = _values(values)
     return Firm(
         name=text(FIRM_NAME, values),
@@ -467,7 +467,7 @@ def firm(values: Values | None = None) -> Firm:
 
 
 def normalized_jurisdiction(value: Jurisdiction) -> Jurisdiction:
-    """Юрисдикция такой, какой её соберёт страница «Настройка»: режимы стран заданы явно."""
+    """Юрисдикция такой, какой её соберёт шаг «Фирма»: режимы стран заданы явно."""
     countries = value.countries
     return Jurisdiction(
         mode=value.mode,
@@ -481,7 +481,7 @@ def _optional_float(value: Decimal | None) -> float | None:
 
 
 def firm_values(value: Firm, quote: RatesQuote | None = None) -> dict[str, Any]:
-    """Значения ключей «Настройки» для фирмы и загруженных курсов."""
+    """Значения ключей шага «Фирма» для фирмы и загруженных курсов."""
     jurisdiction_ = normalized_jurisdiction(value.jurisdiction)
     facts = value.facts
     result: dict[str, Any] = {
@@ -680,7 +680,7 @@ def pricing_kind(values: Values | None = None) -> str:
 
 
 def pricing(values: Values | None = None) -> PricingModel:
-    """Модель ценообразования из данных страницы «Проект».
+    """Модель ценообразования из данных шага «Проект».
 
     Raises:
         pydantic.ValidationError: Потолок или согласованная цена не заданы (0).
@@ -773,7 +773,7 @@ def slider_pct(pct: int) -> int:
 
 
 def duty_multiselect_key(country: Country) -> str:
-    """Ключ списка выбранных пошлин страны на странице «Проект»."""
+    """Ключ списка выбранных пошлин страны на шаге «Проект»."""
     return f"{DUTY_MULTISELECT_PREFIX}{country.value}"
 
 
@@ -889,7 +889,7 @@ def compare_cap(values: Values | None = None) -> Decimal | None:
 # ---------------------------------------------------------------------------
 # Столбцы редактора факта. На экране — подпись пары, план и факт (узкий экран
 # без горизонтальной прокрутки); этап, исполнитель и отметка — скрытые столбцы.
-ACTUALS_LABEL = "Этап · исполнитель"
+ACTUALS_LABEL = "Исполнитель · этап"
 ACTUALS_STAGE = "Этап"
 ACTUALS_EMPLOYEE = "Исполнитель"
 ACTUALS_PLAN = "План, ч"
@@ -939,7 +939,8 @@ def actuals_rows(stages_: list[Stage], rows: list[ActualHours]) -> list[dict[str
             note = "" if key in plan else UNPLANNED_NOTE
             result.append(
                 {
-                    ACTUALS_LABEL: " · ".join(part for part in (*key, note) if part),
+                    # Исполнитель — первым: на узком экране конец подписи обрезается.
+                    ACTUALS_LABEL: " · ".join(part for part in (key[1], key[0], note) if part),
                     ACTUALS_STAGE: key[0],
                     ACTUALS_EMPLOYEE: key[1],
                     ACTUALS_PLAN: float(plan.get(key, 0)),

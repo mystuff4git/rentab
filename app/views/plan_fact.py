@@ -90,7 +90,8 @@ edited = st.data_editor(
     disabled=[column for column in state.ACTUALS_COLUMNS if column != state.ACTUALS_FACT],
     column_order=list(state.ACTUALS_VISIBLE),
     column_config={
-        state.ACTUALS_LABEL: st.column_config.TextColumn(width="large"),
+        # Ширины столбцов — чтобы три столбца поместились в экран телефона.
+        state.ACTUALS_LABEL: st.column_config.TextColumn(width="medium"),
         state.ACTUALS_PLAN: st.column_config.NumberColumn(format="%.1f", width="small"),
         state.ACTUALS_FACT: st.column_config.NumberColumn(
             min_value=0.0,
@@ -337,6 +338,7 @@ render_table(
         rows=summary,
         numeric=frozenset({"План", "Факт", "Отклонение"}),
         key="plan-fact-summary",
+        stack=False,
     )
 )
 st.caption(

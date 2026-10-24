@@ -181,7 +181,7 @@ def test_plan_fact_editor_fits_narrow_screen() -> None:
     # На экране три столбца; этап, исполнитель и отметка — скрытые, но в данных.
     assert list(editor.proto.column_order) == list(state.ACTUALS_VISIBLE)
     labels = list(editor.value[state.ACTUALS_LABEL])
-    assert labels[-1] == "Подготовка и подача заявки · Партнёр · вне плана"
+    assert labels[-1] == "Партнёр · Подготовка и подача заявки · вне плана"
 
 
 def test_plan_fact_unplanned_work_and_manual_billing() -> None:

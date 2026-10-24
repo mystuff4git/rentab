@@ -436,6 +436,7 @@ with st.expander("Расходы проекта — пошлины, субпод
                     ],
                     numeric=frozenset({"Сумма"}),
                     key=f"duties-{country.value}",
+                    stack=False,
                 )
             )
             subtotal = decimal_sum(item.amount for item in items)
