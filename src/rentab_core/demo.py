@@ -16,12 +16,19 @@
   партнёра вне плана (раздел 18.6);
 - «Патентование изобретения» — фикс «издержки + маржа» 30%;
 - «Ответ на уведомление экспертизы» — почасовая модель с потолком.
+
+Для КП (фаза 7) у демо-фирмы есть бланк с вымышленными реквизитами (нули,
+адрес example.com) и логотипом `demo_logo.png` (нарисован шрифтами ParaType,
+OFL), у типовых проектов — условия КП и описания этапов. Цифры смет от них
+не зависят.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from importlib import resources
 
+from rentab_core.documents import Letterhead, OfferTerms, read_logo
 from rentab_core.duties import Quantity
 from rentab_core.io.schema import DutySelection, ProjectRecord, Workspace
 from rentab_core.models import (
@@ -68,6 +75,24 @@ INVENTION_APPLICATION = "Регистрация заявки на изобрет
 INVENTION_EXAMINATION = "Экспертиза заявки на изобретение по существу"
 
 
+DEMO_LOGO = "demo_logo.png"
+
+
+def demo_letterhead() -> Letterhead:
+    """Бланк демо-фирмы: реквизиты заведомо вымышленные."""
+    logo = read_logo((resources.files("rentab_core") / DEMO_LOGO).read_bytes())
+    return Letterhead(
+        requisites="ИНН 0000000000 · КПП 000000000 · ОГРН 0000000000000",
+        address="Москва, ул. Примерная, д. 1, офис 10",
+        phone="+7 000 000-00-00",
+        email="info@example.com",
+        website="example.com",
+        signatory_name="Иванов Иван Иванович",
+        signatory_position="управляющий партнёр",
+        logo=logo,
+    )
+
+
 def _employee(name: str, role: Role, monthly: int, billing: int) -> Employee:
     return Employee(
         name=name,
@@ -99,12 +124,13 @@ def demo_firm() -> Firm:
     )
 
 
-def _stage(name: str, *assignments: tuple[str, int]) -> Stage:
+def _stage(name: str, *assignments: tuple[str, int], description: str = "") -> Stage:
     return Stage(
         name=name,
         assignments=tuple(
             Assignment(employee=who, hours=Decimal(hours)) for who, hours in assignments
         ),
+        description=description,
     )
 
 
@@ -166,8 +192,18 @@ def demo_projects() -> tuple[ProjectRecord, ...]:
         "ООО «Ромашка»",
         "Пример 1 из методологии: классы МКТУ 05, 29, 30.",
         HourlyPricing(),
-        _stage(TM_ANALYSIS, (PARTNER, 2), (LAWYER, 8)),
-        _stage(TM_FILING, (LAWYER, 4), (INTERN, 10)),
+        _stage(
+            TM_ANALYSIS,
+            (PARTNER, 2),
+            (LAWYER, 8),
+            description="Поиск сходных обозначений, заключение о регистрируемости",
+        ),
+        _stage(
+            TM_FILING,
+            (LAWYER, 4),
+            (INTERN, 10),
+            description="Заявка по трём классам МКТУ, подача и контроль формальной экспертизы",
+        ),
         disbursements=(
             Disbursement(
                 name="Нотариальный перевод доверенности",
@@ -190,16 +226,36 @@ def demo_projects() -> tuple[ProjectRecord, ...]:
         "АО «Технологии»",
         "Заявка на изобретение: поиск, подготовка, ответ на запрос экспертизы.",
         FixedPricing(),
-        _stage("Патентный поиск", (LAWYER, 12), (INTERN, 8)),
-        _stage("Подготовка заявки", (PARTNER, 6), (LAWYER, 24)),
-        _stage("Ответ на запрос экспертизы", (PARTNER, 2), (LAWYER, 6)),
+        _stage(
+            "Патентный поиск",
+            (LAWYER, 12),
+            (INTERN, 8),
+            description="Отчёт о поиске по базам ФИПС и ЕАПО, оценка патентоспособности",
+        ),
+        _stage(
+            "Подготовка заявки",
+            (PARTNER, 6),
+            (LAWYER, 24),
+            description="Описание, формула и реферат, подача заявки в Роспатент",
+        ),
+        _stage(
+            "Ответ на запрос экспертизы",
+            (PARTNER, 2),
+            (LAWYER, 6),
+            description="Анализ запроса, ответ и уточнённая формула",
+        ),
     )
     office_action = _project(
         "Ответ на уведомление экспертизы",
         "ИП Смирнов",
         "Потолок согласован с клиентом; часы сверх потолка — списание.",
         CappedPricing(cap=Decimal(60_000)),
-        _stage("Анализ уведомления и ответ", (PARTNER, 2), (LAWYER, 10)),
+        _stage(
+            "Анализ уведомления и ответ",
+            (PARTNER, 2),
+            (LAWYER, 10),
+            description="Доводы и ответ на уведомление экспертизы о результатах проверки",
+        ),
     )
     return (
         ProjectRecord(project=_slide3()),
@@ -211,6 +267,11 @@ def demo_projects() -> tuple[ProjectRecord, ...]:
                     quantities={Quantity.CLASSES: 3},
                 )
             },
+            offer=OfferTerms(
+                number="КП-2",
+                payment_terms="50% — аванс, 50% — после подачи заявки",
+                execution_term="подача заявки — 10 рабочих дней после аванса",
+            ),
         ),
         ProjectRecord(
             project=invention,
@@ -220,11 +281,24 @@ def demo_projects() -> tuple[ProjectRecord, ...]:
                     quantities={Quantity.CLAIMS: 15, Quantity.INDEPENDENT_CLAIMS: 2},
                 )
             },
+            offer=OfferTerms(
+                number="КП-3",
+                payment_terms="50% — аванс, 50% — после подачи заявки",
+                execution_term="подача заявки — 20 рабочих дней после аванса",
+            ),
         ),
-        ProjectRecord(project=office_action),
+        ProjectRecord(
+            project=office_action,
+            offer=OfferTerms(
+                number="КП-4",
+                validity_days=14,
+                payment_terms="100% — после отправки ответа экспертизе",
+                execution_term="до срока ответа, указанного в уведомлении",
+            ),
+        ),
     )
 
 
 def demo_workspace() -> Workspace:
     """Демо-фирма с проектами: то, что загружает кнопка «Загрузить демо-фирму»."""
-    return Workspace(firm=demo_firm(), projects=demo_projects())
+    return Workspace(firm=demo_firm(), letterhead=demo_letterhead(), projects=demo_projects())

@@ -1,7 +1,8 @@
 """Шаг 1 «Фирма»: юрисдикция и налоги, команда, накладные.
 
-Три вкладки: юрисдикция, налоги, применимость режима и курсы; команда;
-накладные фирмы. Ставки в подписях берутся из реестра ядра. Себестоимость
+Четыре вкладки: юрисдикция, налоги, применимость режима и курсы; команда;
+накладные фирмы; реквизиты и логотип для КП (логотип проверяет ядро —
+`documents.read_logo`). Ставки в подписях берутся из реестра ядра. Себестоимость
 часа не вводится, а считается ядром: c = W / (H × u) (docs/methodology.md,
 раздел 3); ставка взносов подставляется по окладу и тарифу (раздел 3.1.1).
 Сотрудника можно изменить: карточка заполняется его данными, а новое имя
@@ -25,6 +26,7 @@ from rentab_core.costing import (
     overhead_rate,
     total_overheads_monthly,
 )
+from rentab_core.documents import MAX_LOGO_BYTES, MAX_LOGO_SIDE_PX
 from rentab_core.errors import CurrencyConversionError, ExchangeRateFetchError
 from rentab_core.fx import RATE_SOURCE_LABELS, fetch_rates
 from rentab_core.models import (
@@ -109,7 +111,9 @@ st.caption(
     "Данные хранятся только в этой сессии; сохранить их в файл можно на главной."
 )
 
-tab_jur, tab_team, tab_exp = st.tabs(["Юрисдикция и налоги", "Команда", "Накладные"])
+tab_jur, tab_team, tab_exp, tab_letterhead = st.tabs(
+    ["Юрисдикция и налоги", "Команда", "Накладные", "Реквизиты и логотип"]
+)
 
 # ===========================================================================
 # ВКЛАДКА 1 — ЮРИСДИКЦИЯ И НАЛОГИ
@@ -870,5 +874,70 @@ with tab_exp:
         "Ставка накладных = накладные ÷ биллируемая ёмкость команды (Σ контрактные часы × "
         "утилизация). Ёмкость считается по карточкам сотрудников на вкладке «Команда»."
     )
+
+# ===========================================================================
+# ВКЛАДКА 4 — РЕКВИЗИТЫ И ЛОГОТИП (для КП)
+# ===========================================================================
+with tab_letterhead:
+    st.subheader("Реквизиты и логотип")
+    st.caption(
+        "Попадают в шапку коммерческого предложения (PDF и DOCX) и в файл JSON вместе с "
+        "фирмой. Всё необязательно: пустые строки в КП не печатаются."
+    )
+    st.text_input("Название фирмы", key=state.FIRM_NAME, placeholder="ООО «Юридическая фирма»")
+    st.text_input(
+        "Реквизиты одной строкой",
+        key=state.LETTERHEAD_KEYS["requisites"],
+        placeholder="ИНН 7700000000 · КПП 770001001 · ОГРН 1027700000000 (в РК — БИН)",
+    )
+    st.text_input(
+        "Адрес", key=state.LETTERHEAD_KEYS["address"], placeholder="Москва, ул. Тверская, д. 1"
+    )
+    col_phone, col_email, col_site = st.columns(3)
+    col_phone.text_input("Телефон", key=state.LETTERHEAD_KEYS["phone"])
+    col_email.text_input("E-mail", key=state.LETTERHEAD_KEYS["email"])
+    col_site.text_input("Сайт", key=state.LETTERHEAD_KEYS["website"])
+    col_signer, col_position = st.columns(2)
+    col_signer.text_input(
+        "Подписант КП (ФИО)",
+        key=state.LETTERHEAD_KEYS["signatory_name"],
+        placeholder="Иванов Иван Иванович",
+    )
+    col_position.text_input(
+        "Должность подписанта",
+        key=state.LETTERHEAD_KEYS["signatory_position"],
+        placeholder="управляющий партнёр",
+    )
+    st.text_area(
+        "Банковские реквизиты (необязательно)",
+        key=state.LETTERHEAD_KEYS["bank_details"],
+        height=80,
+        placeholder="р/с … в АО «Банк», БИК …, к/с …",
+    )
+
+    st.markdown("#### Логотип")
+    logo = st.session_state.get(state.LH_LOGO)
+    col_logo, col_upload = st.columns([1, 2], vertical_alignment="center")
+    with col_logo:
+        if logo is None:
+            st.caption("Логотипа нет: шапка КП — только с реквизитами.")
+        else:
+            st.image(logo.data, width=200)
+            st.button(
+                "Удалить логотип",
+                icon=":material/delete:",
+                on_click=state.remove_logo,
+                key="btn_remove_logo",
+            )
+    with col_upload:
+        st.file_uploader(
+            f"PNG или JPEG, до {MAX_LOGO_BYTES // 1024} КБ и {MAX_LOGO_SIDE_PX} px по стороне",
+            type=["png", "jpg", "jpeg"],
+            key=state.logo_uploader_key(),
+            on_change=state.load_logo,
+        )
+    error = st.session_state.get(state.LOGO_ERROR)
+    if error:
+        st.error(error)
 
 nav.footer(nav.FIRM)

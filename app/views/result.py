@@ -2,7 +2,8 @@
 
 Смета считается по текущим данным активного проекта (`rentab_core`), кнопки
 «Рассчитать» нет. «Смета»: KPI-карточки с формулами, структура выручки,
-светофор этапов, исполнители и расходы, выгрузка XLSX. «Чувствительность» —
+светофор этапов, исполнители и расходы, документы: КП в PDF и DOCX и смета
+XLSX с живыми формулами (собираются ядром по нажатию кнопки). «Чувствительность» —
 запас часов, торнадо и «что если» (`ui.sensitivity_tab`). Вкладка — виджет с
 ключом: открытая вкладка переживает перезапуск и переход между страницами, и
 считается только она. Все суммы — в валюте проекта: пересчёт валют выполняет
@@ -17,12 +18,14 @@ from decimal import Decimal
 import streamlit as st
 from pydantic import ValidationError
 
-from rentab_core import RentabError, dashboard, estimate_xlsx
+from rentab_core import RentabError, dashboard
 from rentab_core.analysis.plan_fact import plan_fact
 from rentab_core.analysis.sensitivity import BreakEvenStatus, break_even
 from rentab_core.analysis.stages import classify
 from rentab_core.costing import billable_capacity, total_overheads_monthly
+from rentab_core.documents import OfferTerms
 from rentab_core.estimate import calculate_estimate
+from rentab_core.export import estimate_xlsx, offer_document, offer_docx, offer_pdf
 from rentab_core.models import CappedPricing, FixedPricing, Scenario
 from rentab_core.money import CURRENCY_SYMBOLS
 from rentab_core.results import Estimate, StageFlag
@@ -46,6 +49,9 @@ from ui.labels import (
 TAB_ESTIMATE = "Смета"
 TAB_SENSITIVITY = "Чувствительность"
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+PDF_MIME = "application/pdf"
+DATE_FORMAT = "%d.%m.%Y"
 LEVERAGE_QUANTUM = Decimal("0.01")
 
 
@@ -343,28 +349,72 @@ def render_lines(estimate: Estimate) -> None:
             )
 
 
-def render_download(scenario: Scenario, estimate: Estimate) -> None:
-    """Название фирмы для шапки и смета XLSX (подпись режима — интерфейса, L-18)."""
-    st.markdown("#### Смета XLSX")
-    firm_name = st.text_input(
-        "Название фирмы (для шапки документа)",
-        key=state.FIRM_NAME,
-        placeholder="Например, ООО «Юридическая фирма»",
-    )
+def render_documents(scenario: Scenario, estimate: Estimate) -> None:
+    """КП в PDF и DOCX и смета XLSX: файлы собираются ядром по нажатию кнопки."""
+    st.markdown("#### Документы")
     today = dt.date.today()
-    title = estimate.project_name.strip() or "project"
-    st.download_button(
-        label="📄 Скачать смету проекта",
-        data=estimate_xlsx(
+    terms = state.offer_terms() or OfferTerms()
+    document = offer_document(
+        scenario, estimate, issue_date=today, letterhead=state.letterhead(), terms=terms
+    )
+    regime = scenario_regime(scenario)
+    firm_name = scenario.firm.name
+
+    def xlsx() -> bytes:
+        return estimate_xlsx(
             estimate,
             scenario=scenario,
             firm_name=firm_name,
             issue_date=today,
-            regime_label=scenario_regime(scenario),
-        ),
+            regime_label=regime,
+            validity_days=terms.validity_days,
+        )
+
+    st.caption(
+        f"Коммерческое предложение {document.subtitle}, действует до "
+        f"{document.valid_until.strftime(DATE_FORMAT)}: этапы и цены без НДС, НДС, "
+        "возмещаемые расходы и условия. Смета XLSX — лист для клиента и внутренний "
+        "расчёт с живыми формулами Excel."
+    )
+    if not firm_name.strip() or state.letterhead() is None:
+        col_text, col_link = st.columns([3, 1], vertical_alignment="center")
+        col_text.info(
+            "В шапке КП не хватает названия фирмы или реквизитов.", icon=":material/info:"
+        )
+        col_link.page_link(nav.FIRM, label="Реквизиты", icon=":material/badge:")
+    title = estimate.project_name.strip() or "project"
+    col_pdf, col_docx, col_xlsx = st.columns(3)
+    # Файлы собираются только по нажатию (data — функция): ядро возвращает байты в
+    # памяти, Streamlit отдаёт их из памяти — на диск сервера ничего не пишется.
+    col_pdf.download_button(
+        "КП (PDF)",
+        data=lambda: offer_pdf(document),
+        file_name=f"КП_{title}_{today.isoformat()}.pdf",
+        mime=PDF_MIME,
+        icon=":material/picture_as_pdf:",
+        on_click="ignore",
+        width="stretch",
+        key="download_offer_pdf",
+    )
+    col_docx.download_button(
+        "КП (DOCX)",
+        data=lambda: offer_docx(document),
+        file_name=f"КП_{title}_{today.isoformat()}.docx",
+        mime=DOCX_MIME,
+        icon=":material/description:",
+        on_click="ignore",
+        width="stretch",
+        key="download_offer_docx",
+    )
+    col_xlsx.download_button(
+        "Смета (XLSX)",
+        data=xlsx,
         file_name=f"Смета_{title}_{today.isoformat()}.xlsx",
         mime=XLSX_MIME,
-        width="content",
+        icon=":material/table_view:",
+        on_click="ignore",
+        width="stretch",
+        key="download_estimate_xlsx",
     )
 
 
@@ -376,7 +426,7 @@ def render_estimate(scenario: Scenario, estimate: Estimate) -> None:
     render_structure(estimate)
     render_stages(estimate)
     render_lines(estimate)
-    render_download(scenario, estimate)
+    render_documents(scenario, estimate)
 
 
 st.title("Результат")

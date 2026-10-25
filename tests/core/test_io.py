@@ -684,7 +684,24 @@ def test_letterhead_offer_and_stage_description_round_trip() -> None:
 
 def test_empty_letterhead_offer_and_descriptions_are_not_written() -> None:
     # Файл без КП пишется без новых полей: его читает и приложение фаз 4–6.
-    raw = raw_file(demo_workspace().model_copy(update={"letterhead": None}))
+    demo = demo_workspace()
+    projects = tuple(
+        record.model_copy(
+            update={
+                "offer": None,
+                "project": record.project.model_copy(
+                    update={
+                        "stages": tuple(
+                            item.model_copy(update={"description": ""})
+                            for item in record.project.stages
+                        )
+                    }
+                ),
+            }
+        )
+        for record in demo.projects
+    )
+    raw = raw_file(demo.model_copy(update={"letterhead": None, "projects": projects}))
     assert "letterhead" not in raw
     for record in raw["projects"]:
         assert "offer" not in record
