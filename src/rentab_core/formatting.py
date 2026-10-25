@@ -99,3 +99,17 @@ def points_label(delta: Decimal) -> str:
 def rate_text(share: Decimal) -> str:
     """Ставка-доля процентом без лишних нулей: 0.05 → «5», 0.151 → «15,1»."""
     return number_text(share * PERCENT)
+
+
+def plural(count: int, forms: tuple[str, str, str]) -> str:
+    """Форма слова после числа: (1 «день», 2 «дня», 5 «дней») → «21 день», «14 дней»."""
+    tail = count % 100
+    if 11 <= tail <= 14:
+        form = forms[2]
+    elif count % 10 == 1:
+        form = forms[0]
+    elif 2 <= count % 10 <= 4:
+        form = forms[1]
+    else:
+        form = forms[2]
+    return f"{count} {form}"

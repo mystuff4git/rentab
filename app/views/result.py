@@ -357,6 +357,7 @@ def render_download(scenario: Scenario, estimate: Estimate) -> None:
         label="📄 Скачать смету проекта",
         data=estimate_xlsx(
             estimate,
+            scenario=scenario,
             firm_name=firm_name,
             issue_date=today,
             regime_label=scenario_regime(scenario),

@@ -15,6 +15,7 @@ from rentab_core.formatting import (
     number_label,
     number_text,
     pct_label,
+    plural,
     points_label,
     rate_text,
     signed_hours,
@@ -35,6 +36,8 @@ from rentab_core.models import (
     UsnProfile,
     UsnVat,
 )
+
+DAY_FORMS = ("день", "дня", "дней")
 
 
 @pytest.mark.parametrize(
@@ -90,3 +93,21 @@ def test_numbers_use_space_groups_and_typographic_minus(text: str, expected: str
 def test_regime_labels_are_human_readable(profile: TaxProfile, expected: str) -> None:
     # L-18: в подписи нет внутренних ключей («УСН income (6%)»).
     assert regime_label(profile) == expected
+
+
+@pytest.mark.parametrize(
+    ("count", "expected"),
+    [
+        (1, "1 день"),
+        (2, "2 дня"),
+        (5, "5 дней"),
+        (11, "11 дней"),
+        (14, "14 дней"),
+        (21, "21 день"),
+        (30, "30 дней"),
+        (102, "102 дня"),
+        (111, "111 дней"),
+    ],
+)
+def test_plural_days(count: int, expected: str) -> None:
+    assert plural(count, DAY_FORMS) == expected

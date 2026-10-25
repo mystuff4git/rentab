@@ -55,5 +55,7 @@ def test_core_xlsx(
     estimate = calculate_estimate(core_scenario)
     if drop_client:
         estimate = estimate.model_copy(update={"client": ""})
-    content = estimate_xlsx(estimate, firm_name=firm_name, issue_date=XLSX_DATE)
+    content = estimate_xlsx(
+        estimate, scenario=core_scenario, firm_name=firm_name, issue_date=XLSX_DATE
+    )
     snapshot(f"core/export/{case}", dump_workbook(content))
