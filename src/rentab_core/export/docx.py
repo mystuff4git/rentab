@@ -57,6 +57,7 @@ from rentab_core.export.style import (
     FontFace,
     font_bytes,
     hex_rgb,
+    stable_zip,
 )
 from rentab_core.formatting import KOPECK, hours_label, money, money_rate
 
@@ -554,4 +555,4 @@ def offer_docx(document: OfferDocument) -> bytes:
     _footer(target, document)
     buffer = io.BytesIO()
     target.save(buffer)
-    return buffer.getvalue()
+    return stable_zip(buffer.getvalue(), issued)

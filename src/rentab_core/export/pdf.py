@@ -73,7 +73,7 @@ RULE_WIDTH = 0.5
 ACCENT_WIDTH = 1.2
 CELL_PADDING = 4
 LINE_PADDING = 1.5  # строки исполнителей под этапом — плотнее
-TOTALS_PADDING = 2.5
+TOTALS_PADDING = 2
 CREATOR = "Rentab"
 
 # Имена шрифтов в PDF (без пробелов) и файлы в пакете.
@@ -127,8 +127,8 @@ HEADING = _style(
     fontSize=HEADING_SIZE,
     leading=HEADING_SIZE * 1.3,
     textColor=_color(BORDO),
-    spaceBefore=10,
-    spaceAfter=4,
+    spaceBefore=8,
+    spaceAfter=3,
 )
 BULLET = _style(leftIndent=8, firstLineIndent=-8, spaceAfter=2)
 TABLE_HEADER = _style(fontName=SANS_BOLD, fontSize=9, textColor=_color(BORDO))
@@ -180,7 +180,7 @@ def _header(document: OfferDocument) -> list[Flowable]:
             ]
         )
     )
-    return [table, Spacer(1, 10)]
+    return [table, Spacer(1, 8)]
 
 
 def _meta(document: OfferDocument) -> Table:
@@ -349,7 +349,7 @@ def _totals(document: OfferDocument) -> Table:
 def _signature(document: OfferDocument) -> list[Flowable]:
     story: list[Flowable] = []
     if document.signature:
-        story += [Spacer(1, 14), _p("С уважением,"), _p(document.signature, BOLD)]
+        story += [Spacer(1, 10), _p("С уважением,"), _p(document.signature, BOLD)]
     bank = document.letterhead.bank_details.strip()
     if bank:
         story += [Spacer(1, 10), _p("Банковские реквизиты", SMALL), _p(bank, SMALL)]

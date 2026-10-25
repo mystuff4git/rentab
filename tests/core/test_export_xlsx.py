@@ -174,3 +174,10 @@ def test_data_sheet_holds_inputs_and_cost_formulas() -> None:
     lines = [row for row in data if row and row[0] in {"Анализ", "Подготовка документов"}]
     assert [row[3] for row in lines] == [5, 15]
     assert all(str(row[5]).startswith("=O") for row in lines)
+
+
+def test_xlsx_is_deterministic() -> None:
+    scenario = basic_scenario()
+    estimate = calculate_estimate(scenario)
+    first = estimate_xlsx(estimate, scenario=scenario, issue_date=ISSUE_DATE)
+    assert first == estimate_xlsx(estimate, scenario=scenario, issue_date=ISSUE_DATE)

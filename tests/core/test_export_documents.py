@@ -134,9 +134,11 @@ def test_pdf_has_logo_only_when_given() -> None:
     assert pdf_images(offer_pdf(demo_document(1, letterhead=Letterhead()))) == 0
 
 
-def test_pdf_is_deterministic() -> None:
+@pytest.mark.parametrize("render", [offer_pdf, offer_docx])
+def test_documents_are_deterministic(render: Any) -> None:
+    # Одинаковые данные — одинаковый файл: время в архиве DOCX — дата документа.
     doc = demo_document(3)
-    assert offer_pdf(doc) == offer_pdf(doc)
+    assert render(doc) == render(doc)
 
 
 def test_pdf_metadata_and_hourly_table() -> None:

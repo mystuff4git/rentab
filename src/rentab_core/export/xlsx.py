@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -34,10 +35,11 @@ from openpyxl.formatting.rule import FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.writer.excel import ExcelWriter
 
 from rentab_core.documents import DEFAULT_OFFER_VALIDITY_DAYS
 from rentab_core.errors import CurrencyConversionError
-from rentab_core.export.style import BORDO, PARCHMENT
+from rentab_core.export.style import BORDO, PARCHMENT, stable_zip
 from rentab_core.formatting import plural
 from rentab_core.fx import convert
 from rentab_core.models import (
@@ -1109,7 +1111,12 @@ def estimate_xlsx(
     _internal_sheet(internal_sheet, estimate, refs, label)
     # Excel и LibreOffice пересчитывают формулы при открытии файла.
     workbook.calculation.fullCalcOnLoad = True
+    issued = dt.datetime.combine(issue_date, dt.time())
+    workbook.properties.created = workbook.properties.modified = issued
 
+    # Как Workbook.save, но без подмены «изменён» текущим временем: одинаковые
+    # данные дают одинаковый файл.
     buffer = io.BytesIO()
-    workbook.save(buffer)
-    return buffer.getvalue()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        ExcelWriter(workbook, archive).write_data()
+    return stable_zip(buffer.getvalue(), issued)
