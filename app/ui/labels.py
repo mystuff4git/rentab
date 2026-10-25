@@ -1,10 +1,10 @@
 """Русские подписи перечислений ядра и формат чисел интерфейса.
 
 Проценты в подписях берутся из реестра ставок ядра, а не пишутся вручную.
-Числа — «1 234 567 ₽»: разряды и знак валюты отделяются неразрывным пробелом
-(число не переносится на узком экране), отрицательные значения — с минусом
-«−». Исключение — дельты `st.metric`: Streamlit выбирает стрелку и цвет по
-ведущему ASCII-минусу.
+Числа — «1 234 567 ₽» и подпись режима (L-18) — функции ядра
+(`rentab_core.formatting`, `rentab_core.labels`): КП и смета пишут суммы теми
+же функциями. Исключение — дельты `st.metric`: Streamlit выбирает стрелку и
+цвет по ведущему ASCII-минусу.
 """
 
 from __future__ import annotations
@@ -17,33 +17,45 @@ from rentab_core.analysis.dashboard import Profitability
 from rentab_core.analysis.plan_fact import BillingRule
 from rentab_core.analysis.sensitivity import Factor, TaxBranch, TornadoNote
 from rentab_core.errors import FixedPriceError
+from rentab_core.formatting import DASH as DASH
+from rentab_core.formatting import HOURS_QUANTUM as HOURS_QUANTUM
+from rentab_core.formatting import LABEL_QUANTUM, PCT_QUANTUM, rate_text, sign_prefix
+from rentab_core.formatting import MINUS as MINUS
+from rentab_core.formatting import NBSP as NBSP
+from rentab_core.formatting import hours_label as hours_label
+from rentab_core.formatting import money as money
+from rentab_core.formatting import money_rate as money_rate
+from rentab_core.formatting import number_label as number_label
+from rentab_core.formatting import number_text as number_text
+from rentab_core.formatting import pct_label as pct_label
+from rentab_core.formatting import points_label as points_label
+from rentab_core.formatting import signed_hours as signed_hours
+from rentab_core.formatting import signed_money as signed_money
+from rentab_core.formatting import signed_pct as signed_pct
+from rentab_core.labels import kz_rate_pct as kz_rate_pct
+from rentab_core.labels import kz_vat_suffix as kz_vat_suffix
+from rentab_core.labels import regime_label as regime_label
+from rentab_core.labels import rf_rate_pct as rf_rate_pct
 from rentab_core.models import (
     ROLE_LABELS,
-    AusnProfile,
     Country,
     DisbursementKind,
     JurisdictionMode,
     KzForm,
-    KzOurProfile,
     KzVat,
     LegalForm,
     NpdClientType,
-    NpdProfile,
-    OsnoProfile,
     Role,
     SocialContributions,
     TaxProfile,
     UsnObject,
-    UsnProfile,
     UsnVat,
     VatMode,
 )
-from rentab_core.money import PERCENT, format_number, round_to
+from rentab_core.money import PERCENT, round_to
 from rentab_core.rates import amount, rate
 from rentab_core.results import StageFlag
 from rentab_core.tax.eligibility import Severity
-from rentab_core.tax.labels import percent
-from rentab_core.tax.ru import USN_VAT_KEYS
 
 JURISDICTION_LABELS: Mapping[JurisdictionMode, str] = {
     JurisdictionMode.RF: "Только РФ",
@@ -120,67 +132,21 @@ SEVERITY_ICONS: Mapping[Severity, str] = {
 }
 # Пометка позиции справочника, не сверенной с первоисточником полностью.
 NEEDS_REVIEW_MARK = "⚠️"
-# Шаг округления сумм в подписях: рубль (тенге); часов — десятая.
-LABEL_QUANTUM = Decimal(1)
-HOURS_QUANTUM = Decimal("0.1")
 PROFITABILITY_MESSAGES: Mapping[Profitability, str] = {
     Profitability.PROFITABLE: "Проект рентабелен",
     Profitability.BREAKEVEN: "Проект в точке безубыточности",
     Profitability.LOSS: "Проект убыточен",
 }
-NBSP = "\u00a0"
-MINUS = "\u2212"
-DASH = "—"
-
-
-def rf_rate_pct(key: str) -> str:
-    """Ставка РФ из реестра как целый процент: «6»."""
-    return percent(rate(Country.RF, key))
 
 
 def rate_pct(country: Country, key: str) -> str:
     """Ставка из реестра как процент без лишних нулей: «15,1»."""
-    return format_number(rate(country, key) * PERCENT)
-
-
-def number_text(value: Decimal) -> str:
-    """Число для интерфейса без округления: «1 234 567», «−2 200», «0,5»."""
-    if value == 0:
-        value = abs(value)
-    return format_number(value).replace(" ", NBSP).replace("-", MINUS)
-
-
-def number_label(value: Decimal, quantum: Decimal = LABEL_QUANTUM) -> str:
-    """Число с округлением «половина вверх» и знаками шага: «1 234 567», «7,00», «−0,73»."""
-    rounded = round_to(value, quantum)
-    if rounded == 0:
-        rounded = abs(rounded)
-    integer, _, fraction = f"{rounded:f}".partition(".")
-    sign = MINUS if integer.startswith("-") else ""
-    digits = integer.lstrip("-")
-    groups = [digits[max(i - 3, 0) : i] for i in range(len(digits), 0, -3)][::-1]
-    text = sign + NBSP.join(groups)
-    return f"{text},{fraction}" if fraction else text
-
-
-def money(value: Decimal, symbol: str, quantum: Decimal = LABEL_QUANTUM) -> str:
-    """Сумма для подписи: «1 234 567 ₽», по умолчанию до рубля (тенге)."""
-    return f"{number_label(value, quantum)}{NBSP}{symbol}"
-
-
-def money_rate(value: Decimal, symbol: str, quantum: Decimal = LABEL_QUANTUM) -> str:
-    """Сумма за час: «4 125 ₽/ч»."""
-    return f"{money(value, symbol, quantum)}/ч"
+    return rate_text(rate(country, key))
 
 
 def registry_amount(country: Country, key: str) -> str:
     """Порог из реестра числом для подписи: «60 000 000», «5»."""
     return number_text(amount(country, key))
-
-
-def kz_rate_pct(key: str) -> str:
-    """Ставка РК из реестра как целый процент: «20»."""
-    return percent(rate(Country.KZ, key))
 
 
 def usn_object_label(value: UsnObject) -> str:
@@ -220,39 +186,6 @@ def kz_form_label(value: KzForm) -> str:
     if value == KzForm.TOO:
         return f"ТОО (КПН {kz_rate_pct('our.cit_too')}%)"
     return f"ИП (ИПН {kz_rate_pct('our.iit_ip')}%)"
-
-
-def kz_vat_suffix(value: KzVat) -> str:
-    """НДС в подписи режима РК."""
-    if value == KzVat.NONE:
-        return " без НДС"
-    return f" + НДС {kz_rate_pct('vat_16')}%"
-
-
-def regime_label(profile: TaxProfile) -> str:
-    """Режим с вариантом НДС для матрицы сравнения: «УСН «доходы» 6% + НДС 5%»."""
-    if isinstance(profile, UsnProfile):
-        if profile.tax_object == UsnObject.INCOME:
-            name = f"УСН «доходы» {rf_rate_pct('usn.income')}%"
-        else:
-            name = f"УСН «доходы − расходы» {rf_rate_pct('usn.income_minus_expenses')}%"
-        if profile.vat == UsnVat.NONE:
-            return f"{name} без НДС"
-        return f"{name} + НДС {rf_rate_pct(USN_VAT_KEYS[profile.vat])}%"
-    if isinstance(profile, AusnProfile):
-        return f"АУСН {rf_rate_pct('ausn.income')}%"
-    if isinstance(profile, NpdProfile):
-        if profile.client_type == NpdClientType.INDIVIDUAL:
-            return f"НПД {rf_rate_pct('npd.individual')}% (физлица)"
-        return f"НПД {rf_rate_pct('npd.legal_entity')}% (юрлица)"
-    if isinstance(profile, OsnoProfile):
-        return f"ОСНО {rf_rate_pct('osno.profit')}% + НДС {rf_rate_pct('osno.vat')}%"
-    assert isinstance(profile, KzOurProfile)
-    if profile.form == KzForm.TOO:
-        name = f"ОУР РК, ТОО (КПН {kz_rate_pct('our.cit_too')}%)"
-    else:
-        name = f"ОУР РК, ИП (ИПН {kz_rate_pct('our.iit_ip')}%)"
-    return name + kz_vat_suffix(profile.vat)
 
 
 def fixed_price_error(exc: FixedPriceError, profile: TaxProfile) -> str:
@@ -312,49 +245,6 @@ COMPARE_METRICS: Mapping[str, str] = {
 }
 
 
-PCT_QUANTUM = Decimal("0.01")
-
-
-def _sign(rounded: Decimal, minus: str = MINUS) -> str:
-    return "+" if rounded > 0 else (minus if rounded < 0 else "")
-
-
-def hours_label(value: Decimal) -> str:
-    """Часы для подписи: «159,6 ч», «40 ч» (без лишнего нуля)."""
-    return f"{number_text(round_to(value, HOURS_QUANTUM))}{NBSP}ч"
-
-
-def signed_hours(value: Decimal) -> str:
-    """Часы со знаком: «+55 ч», «−0,5 ч»."""
-    rounded = round_to(value, HOURS_QUANTUM)
-    return f"{_sign(rounded)}{number_text(abs(rounded))}{NBSP}ч"
-
-
-def signed_money(value: Decimal, symbol: str) -> str:
-    """Сумма со знаком: «+5 650 ₽», «−227 700 ₽»."""
-    rounded = round_to(value, LABEL_QUANTUM)
-    return f"{_sign(rounded)}{number_text(abs(rounded))}{NBSP}{symbol}"
-
-
-def pct_label(share: Decimal | None, quantum: Decimal = PCT_QUANTUM) -> str:
-    """Доля в процентах: «75,17%», «−0,73%»; None — «—»."""
-    if share is None:
-        return DASH
-    return f"{number_label(share * PERCENT, quantum)}%"
-
-
-def signed_pct(share: Decimal, quantum: Decimal = Decimal(1)) -> str:
-    """Доля в процентах со знаком: «+399%»."""
-    rounded = round_to(share * PERCENT, quantum)
-    return f"{_sign(rounded)}{number_label(abs(rounded), quantum)}%"
-
-
-def points_label(delta: Decimal) -> str:
-    """Разница долей в процентных пунктах: «−75,90 п. п.»."""
-    rounded = round_to(delta * PERCENT, PCT_QUANTUM)
-    return f"{_sign(rounded)}{number_label(abs(rounded), PCT_QUANTUM)}{NBSP}п.{NBSP}п."
-
-
 def metric_delta(value: Decimal, symbol: str) -> str | None:
     """Дельта суммы для `st.metric`: «-69 056 ₽»; None — без изменения.
 
@@ -363,7 +253,7 @@ def metric_delta(value: Decimal, symbol: str) -> str | None:
     rounded = round_to(value, LABEL_QUANTUM)
     if rounded == 0:
         return None
-    return f"{_sign(rounded, '-')}{number_text(abs(rounded))}{NBSP}{symbol}"
+    return f"{sign_prefix(rounded, '-')}{number_text(abs(rounded))}{NBSP}{symbol}"
 
 
 def metric_points(delta: Decimal) -> str | None:
@@ -371,7 +261,7 @@ def metric_points(delta: Decimal) -> str | None:
     rounded = round_to(delta * PERCENT, PCT_QUANTUM)
     if rounded == 0:
         return None
-    return f"{_sign(rounded, '-')}{number_label(abs(rounded), PCT_QUANTUM)}{NBSP}п.{NBSP}п."
+    return f"{sign_prefix(rounded, '-')}{number_label(abs(rounded), PCT_QUANTUM)}{NBSP}п.{NBSP}п."
 
 
 def employee_title(name: str, role: Role) -> str:
