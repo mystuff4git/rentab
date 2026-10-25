@@ -510,6 +510,15 @@
       "title": "HourlyPricing",
       "type": "object"
     },
+    "ImageFormat": {
+      "description": "Формат логотипа (MIME-тип).",
+      "enum": [
+        "image/png",
+        "image/jpeg"
+      ],
+      "title": "ImageFormat",
+      "type": "string"
+    },
     "Jurisdiction": {
       "additionalProperties": false,
       "description": "Юрисдикция фирмы и налоговые режимы по странам.\n\nAttributes:\n    mode: РФ, РК или обе страны.\n    rf: Режим в РФ; None — режим по умолчанию (УСН «Доходы» без НДС).\n    kz: Режим в РК; None — ОУР для ТОО без НДС.",
@@ -627,6 +636,85 @@
       "title": "LegalForm",
       "type": "string"
     },
+    "Letterhead": {
+      "additionalProperties": false,
+      "description": "Бланк фирмы для КП: реквизиты, контакты, подписант, логотип.\n\nНазвание фирмы — `Firm.name`. Реквизиты — одной строкой, как их пишет\nфирма: «ИНН … · КПП … · ОГРН …» в РФ, «БИН …» в РК.\n\nAttributes:\n    requisites: Регистрационные реквизиты одной строкой.\n    address: Адрес.\n    phone: Телефон.\n    email: Электронная почта.\n    website: Сайт.\n    signatory_name: ФИО подписанта КП.\n    signatory_position: Должность подписанта.\n    bank_details: Банковские реквизиты (несколько строк), необязательно.\n    logo: Логотип; None — без логотипа.",
+      "properties": {
+        "requisites": {
+          "default": "",
+          "title": "Requisites",
+          "type": "string"
+        },
+        "address": {
+          "default": "",
+          "title": "Address",
+          "type": "string"
+        },
+        "phone": {
+          "default": "",
+          "title": "Phone",
+          "type": "string"
+        },
+        "email": {
+          "default": "",
+          "title": "Email",
+          "type": "string"
+        },
+        "website": {
+          "default": "",
+          "title": "Website",
+          "type": "string"
+        },
+        "signatory_name": {
+          "default": "",
+          "title": "Signatory Name",
+          "type": "string"
+        },
+        "signatory_position": {
+          "default": "",
+          "title": "Signatory Position",
+          "type": "string"
+        },
+        "bank_details": {
+          "default": "",
+          "title": "Bank Details",
+          "type": "string"
+        },
+        "logo": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Logo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "Letterhead",
+      "type": "object"
+    },
+    "Logo": {
+      "additionalProperties": false,
+      "description": "Логотип фирмы: байты файла PNG или JPEG.\n\nAttributes:\n    media_type: Формат файла.\n    data: Содержимое файла (в JSON — base64).",
+      "properties": {
+        "media_type": {
+          "$ref": "#/$defs/ImageFormat"
+        },
+        "data": {
+          "contentEncoding": "base64",
+          "title": "Data",
+          "type": "string"
+        }
+      },
+      "required": [
+        "media_type",
+        "data"
+      ],
+      "title": "Logo",
+      "type": "object"
+    },
     "MonthlyCost": {
       "additionalProperties": false,
       "description": "Полная стоимость сотрудника в месяц, введённая напрямую.\n\nТак задаётся нормативное вознаграждение партнёра по Майстеру — рыночная\nцена его труда, отделённая от прибыли фирмы, — и стоимость подрядчика.",
@@ -681,6 +769,41 @@
         }
       },
       "title": "NpdProfile",
+      "type": "object"
+    },
+    "OfferTerms": {
+      "additionalProperties": false,
+      "description": "Условия КП по проекту.\n\nAttributes:\n    number: Номер КП; пусто — без номера.\n    validity_days: Срок действия предложения, дней от даты документа.\n    payment_terms: Порядок оплаты; пусто — строки нет.\n    execution_term: Срок выполнения работ; пусто — строки нет.\n    extra_terms: Дополнительные условия (несколько строк).",
+      "properties": {
+        "number": {
+          "default": "",
+          "title": "Number",
+          "type": "string"
+        },
+        "validity_days": {
+          "default": 30,
+          "maximum": 365,
+          "minimum": 1,
+          "title": "Validity Days",
+          "type": "integer"
+        },
+        "payment_terms": {
+          "default": "",
+          "title": "Payment Terms",
+          "type": "string"
+        },
+        "execution_term": {
+          "default": "",
+          "title": "Execution Term",
+          "type": "string"
+        },
+        "extra_terms": {
+          "default": "",
+          "title": "Extra Terms",
+          "type": "string"
+        }
+      },
+      "title": "OfferTerms",
       "type": "object"
     },
     "OsnoProfile": {
@@ -882,7 +1005,7 @@
     },
     "ProjectRecord": {
       "additionalProperties": false,
-      "description": "Проект в файле и в сессии: проект ядра и выбранные пошлины.\n\nAttributes:\n    project: Проект; `disbursements` — только расходы, введённые\n        вручную. Пошлины из каталога добавляются при расчёте.\n    duties: Выбранные пошлины по странам.",
+      "description": "Проект в файле и в сессии: проект ядра, выбранные пошлины и условия КП.\n\nAttributes:\n    project: Проект; `disbursements` — только расходы, введённые\n        вручную. Пошлины из каталога добавляются при расчёте.\n    duties: Выбранные пошлины по странам.\n    offer: Условия КП (фаза 7); None — не заданы, КП с условиями по\n        умолчанию.",
       "properties": {
         "project": {
           "$ref": "#/$defs/Project"
@@ -896,6 +1019,17 @@
           },
           "title": "Duties",
           "type": "object"
+        },
+        "offer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OfferTerms"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "ProjectRecord",
@@ -1018,7 +1152,7 @@
     },
     "Stage": {
       "additionalProperties": false,
-      "description": "Этап проекта: набор назначений «сотрудник × часы».\n\nПирамида «партнёр проверяет 2 ч, юрист делает 8 ч» — один этап с двумя\nназначениями (L-05).",
+      "description": "Этап проекта: набор назначений «сотрудник × часы».\n\nПирамида «партнёр проверяет 2 ч, юрист делает 8 ч» — один этап с двумя\nназначениями (L-05).\n\nAttributes:\n    name: Название; уникально в проекте.\n    assignments: Назначения.\n    description: Что получает клиент на этапе — строка под названием этапа\n        в КП; в расчёт не входит.",
       "properties": {
         "name": {
           "title": "Name",
@@ -1031,6 +1165,11 @@
           },
           "title": "Assignments",
           "type": "array"
+        },
+        "description": {
+          "default": "",
+          "title": "Description",
+          "type": "string"
         }
       },
       "required": [
@@ -1134,6 +1273,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/RatesQuote"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "letterhead": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Letterhead"
         },
         {
           "type": "null"

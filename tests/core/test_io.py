@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import runpy
@@ -15,6 +16,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from rentab_core.demo import TM_APPLICATION, TM_EXAMINATION, demo_workspace
+from rentab_core.documents import Letterhead, OfferTerms, read_logo
 from rentab_core.duties import ApplicantCategory, Quantity, load_catalog
 from rentab_core.errors import ProfileImportError
 from rentab_core.estimate import calculate_estimate
@@ -69,7 +71,7 @@ from rentab_core.models import (
     VatMode,
 )
 from rentab_core.money import Currency, round_to
-from tests.core.factories import actuals, d, stage
+from tests.core.factories import actuals, d, image_bytes, stage
 
 SCHEMA_PATH = Path(__file__).parents[2] / "docs" / "profile.schema.json"
 EXPORTED_AT = dt.datetime(2026, 10, 22, 15, 0, tzinfo=dt.UTC)
@@ -635,4 +637,75 @@ def test_actuals_on_unknown_stage_point_to_project() -> None:
         "hours": [{"stage": "Нет такого", "employee": "Партнёр", "hours": "1"}]
     }
     with pytest.raises(ProfileImportError, match=r"projects\[0\]\.project: Факт «Партнёр»"):
+        loads(encode(raw))
+
+
+# ---------------------------------------------------------------------------
+# Фаза 7: бланк фирмы, условия КП и описания этапов — без новой версии схемы
+# ---------------------------------------------------------------------------
+LETTERHEAD = Letterhead(
+    requisites="ИНН 0000000000 · КПП 000000000",
+    address="Москва, ул. Примерная, д. 1",
+    email="info@example.com",
+    signatory_name="Иванов И. И.",
+    signatory_position="управляющий партнёр",
+    bank_details="р/с 00000000000000000000\nБИК 000000000",
+    logo=read_logo(image_bytes()),
+)
+OFFER = OfferTerms(number="КП-7", validity_days=14, payment_terms="50% — аванс")
+
+
+def test_letterhead_offer_and_stage_description_round_trip() -> None:
+    base = demo_workspace()
+    record = base.projects[1]
+    described = record.project.model_copy(
+        update={
+            "stages": tuple(
+                stage_.model_copy(update={"description": f"Результат: {stage_.name}"})
+                for stage_ in record.project.stages
+            )
+        }
+    )
+    workspace = base.model_copy(
+        update={
+            "letterhead": LETTERHEAD,
+            "projects": (record.model_copy(update={"project": described, "offer": OFFER}),),
+        }
+    )
+    raw = raw_file(workspace)
+    assert raw["letterhead"]["logo"]["media_type"] == "image/png"
+    assert isinstance(raw["letterhead"]["logo"]["data"], str)  # base64
+    assert raw["projects"][0]["offer"]["validity_days"] == 14
+    assert raw["projects"][0]["project"]["stages"][0]["description"].startswith("Результат")
+    result = loads(dumps(workspace))
+    assert result.workspace == workspace
+    assert result.notes == ()
+
+
+def test_empty_letterhead_offer_and_descriptions_are_not_written() -> None:
+    # Файл без КП пишется без новых полей: его читает и приложение фаз 4–6.
+    raw = raw_file(demo_workspace().model_copy(update={"letterhead": None}))
+    assert "letterhead" not in raw
+    for record in raw["projects"]:
+        assert "offer" not in record
+        assert all("description" not in item for item in record["project"]["stages"])
+
+
+def test_broken_logo_is_dropped_with_warning() -> None:
+    raw = raw_file(demo_workspace().model_copy(update={"letterhead": LETTERHEAD}))
+    # Сигнатура PNG верна, но картинка повреждена: модель её пропустит, Pillow — нет.
+    broken = b"\x89PNG\r\n\x1a\n" + b"\x00" * 30
+    raw["letterhead"]["logo"]["data"] = base64.b64encode(broken).decode("ascii")
+    result = loads(encode(raw))
+    assert result.workspace.letterhead is not None
+    assert result.workspace.letterhead.logo is None
+    assert result.workspace.letterhead.requisites == LETTERHEAD.requisites
+    assert [note.level for note in result.notes] == [NoteLevel.WARNING]
+    assert "Логотип из файла не загружен" in result.notes[0].message
+
+
+def test_logo_of_wrong_type_points_to_field() -> None:
+    raw = raw_file(demo_workspace().model_copy(update={"letterhead": LETTERHEAD}))
+    raw["letterhead"]["logo"]["media_type"] = "image/jpeg"
+    with pytest.raises(ProfileImportError, match=r"letterhead\.logo: логотип не похож"):
         loads(encode(raw))

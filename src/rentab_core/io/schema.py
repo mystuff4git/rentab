@@ -24,6 +24,7 @@ from typing import Annotated, Any, Final, Literal
 
 from pydantic import Field
 
+from rentab_core.documents import Letterhead, OfferTerms
 from rentab_core.duties import ApplicantCategory, Quantity, duty_disbursements
 from rentab_core.fx import RatesQuote
 from rentab_core.models import (
@@ -68,16 +69,19 @@ class DutySelection(CoreModel):
 
 
 class ProjectRecord(CoreModel):
-    """Проект в файле и в сессии: проект ядра и выбранные пошлины.
+    """Проект в файле и в сессии: проект ядра, выбранные пошлины и условия КП.
 
     Attributes:
         project: Проект; `disbursements` — только расходы, введённые
             вручную. Пошлины из каталога добавляются при расчёте.
         duties: Выбранные пошлины по странам.
+        offer: Условия КП (фаза 7); None — не заданы, КП с условиями по
+            умолчанию.
     """
 
     project: Project = Field(default_factory=Project)
     duties: dict[Country, DutySelection] = Field(default_factory=dict)
+    offer: OfferTerms | None = None
 
     def to_project(self, countries: Iterable[Country] = tuple(Country)) -> Project:
         """Проект для расчёта: пошлины стран `countries`, затем расходы, введённые вручную."""
@@ -98,17 +102,19 @@ class ProjectRecord(CoreModel):
 
 
 class Workspace(CoreModel):
-    """Данные пользователя: фирма, загруженные курсы и проекты.
+    """Данные пользователя: фирма, загруженные курсы, бланк для КП и проекты.
 
     Attributes:
         firm: Фирма; курсы в `firm.exchange_rates` — те, что идут в расчёт.
         rates_quote: Последние загруженные курсы с источником и датой; если
             их потом изменили вручную, `firm.exchange_rates` от них отличается.
+        letterhead: Реквизиты и логотип фирмы для КП (фаза 7); None — не заданы.
         projects: Проекты в порядке, в каком их видит пользователь.
     """
 
     firm: Firm = Field(default_factory=Firm)
     rates_quote: RatesQuote | None = None
+    letterhead: Letterhead | None = None
     projects: tuple[ProjectRecord, ...] = ()
 
 
@@ -128,11 +134,17 @@ class ProfileFile(CoreModel):
     app_version: str = ""
     firm: Firm = Field(default_factory=Firm)
     rates_quote: RatesQuote | None = None
+    letterhead: Letterhead | None = None
     projects: tuple[ProjectRecord, ...] = ()
 
     def workspace(self) -> Workspace:
         """Содержимое файла без конверта."""
-        return Workspace(firm=self.firm, rates_quote=self.rates_quote, projects=self.projects)
+        return Workspace(
+            firm=self.firm,
+            rates_quote=self.rates_quote,
+            letterhead=self.letterhead,
+            projects=self.projects,
+        )
 
 
 def json_schema() -> dict[str, Any]:

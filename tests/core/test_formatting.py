@@ -49,6 +49,7 @@ from rentab_core.models import (
         (money_rate(Decimal("4125"), "₽"), "4 125 ₽/ч"),
         (number_label(Decimal(7), Decimal("0.01")), "7,00"),
         (number_text(Decimal("-1234.5")), "−1 234,5"),
+        (number_text(Decimal("-0")), "0"),
         (pct_label(Decimal("0.588")), "58,80%"),
         (pct_label(Decimal("-0.0073333")), "−0,73%"),
         (pct_label(None), "—"),
