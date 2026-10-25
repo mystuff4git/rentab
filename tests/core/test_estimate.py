@@ -7,6 +7,7 @@ import pytest
 from rentab_core.errors import CurrencyConversionError, FixedPriceError
 from rentab_core.estimate import calculate_estimate
 from rentab_core.models import (
+    AusnProfile,
     CappedPricing,
     Country,
     Disbursement,
@@ -24,6 +25,7 @@ from rentab_core.models import (
     PricingModel,
     Project,
     Role,
+    Salary,
     Scenario,
     UsnProfile,
     UsnVat,
@@ -119,6 +121,24 @@ def test_cost_plus_fixed_price() -> None:
     assert estimate.target_margin == d("0.30")
     assert estimate.total_client == estimate.revenue
     assert [s.stage_name for s in estimate.stages] == ["Подготовка", "Регистрация"]
+
+
+def test_cost_plus_hits_target_on_ausn_with_salary() -> None:
+    # L-23: ставка взносов 30% осталась после смены режима на АУСН; налог АУСН на
+    # взносы не уменьшается, поэтому цена их не вычитает и маржа равна цели.
+    salaried = Employee(
+        name="Юрист",
+        role=Role.ASSOCIATE,
+        compensation=Salary(gross_salary=d(100_000), employer_contribution_rate=d("0.30")),
+        billing_rate=d(3_000),
+    )
+    scenario = Scenario(
+        firm=Firm(jurisdiction=Jurisdiction(rf=AusnProfile()), team=(salaried,)),
+        project=Project(pricing=fixed(), stages=(stage("Работа", ("Юрист", 10)),)),
+    )
+    estimate = calculate_estimate(scenario)
+    assert abs(estimate.margin - d("0.30")) < d("1e-20")  # до исправления — 11,4%
+    assert estimate.tax.deduction == 0
 
 
 def test_agreed_fixed_price() -> None:
