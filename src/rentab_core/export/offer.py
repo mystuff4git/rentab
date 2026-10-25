@@ -23,12 +23,11 @@ from enum import StrEnum
 
 from rentab_core.documents import Letterhead, OfferTerms
 from rentab_core.formatting import KOPECK, money, rate_text
+from rentab_core.labels import employee_title
 from rentab_core.models import (
-    ROLE_LABELS,
     CappedPricing,
     CoreModel,
     FixedPricing,
-    Role,
     Scenario,
     VatMode,
 )
@@ -228,12 +227,6 @@ def _net_factor(estimate: Estimate) -> Decimal:
     if estimate.vat_mode == VatMode.INCLUDED:
         return ONE / (ONE + estimate.tax.terms.vat_rate)
     return ONE
-
-
-def employee_title(name: str, role: Role) -> str:
-    """«Имя (роль)»; роль не повторяется, если это и есть имя."""
-    label = ROLE_LABELS[role]
-    return name if name == label else f"{name} ({label})"
 
 
 def _price_kind(estimate: Estimate) -> PriceKind:

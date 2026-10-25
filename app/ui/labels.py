@@ -32,12 +32,12 @@ from rentab_core.formatting import points_label as points_label
 from rentab_core.formatting import signed_hours as signed_hours
 from rentab_core.formatting import signed_money as signed_money
 from rentab_core.formatting import signed_pct as signed_pct
+from rentab_core.labels import employee_title as employee_title
 from rentab_core.labels import kz_rate_pct as kz_rate_pct
 from rentab_core.labels import kz_vat_suffix as kz_vat_suffix
 from rentab_core.labels import regime_label as regime_label
 from rentab_core.labels import rf_rate_pct as rf_rate_pct
 from rentab_core.models import (
-    ROLE_LABELS,
     Country,
     DisbursementKind,
     JurisdictionMode,
@@ -45,7 +45,6 @@ from rentab_core.models import (
     KzVat,
     LegalForm,
     NpdClientType,
-    Role,
     SocialContributions,
     TaxProfile,
     UsnObject,
@@ -262,12 +261,6 @@ def metric_points(delta: Decimal) -> str | None:
     if rounded == 0:
         return None
     return f"{sign_prefix(rounded, '-')}{number_label(abs(rounded), PCT_QUANTUM)}{NBSP}п.{NBSP}п."
-
-
-def employee_title(name: str, role: Role) -> str:
-    """Сотрудник с ролью: «Юрист (Младший юрист)»; роль не повторяется, если это и есть имя."""
-    label = ROLE_LABELS[role]
-    return name if name == label else f"{name} ({label})"
 
 
 def flag_badge(flag: StageFlag) -> str:

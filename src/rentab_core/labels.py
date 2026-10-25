@@ -1,4 +1,4 @@
-"""Человекочитаемые подписи налоговых режимов (L-18) для документов и интерфейса.
+"""Человекочитаемые подписи для документов и интерфейса: режимы (L-18), сотрудники.
 
 Подпись ядра `Estimate.regime_label` осталась как в v0.3 («УСН income (6%)»):
 она входит в снимки ядра и мост «было/стало». Документы (КП, смета) и
@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from rentab_core.models import (
+    ROLE_LABELS,
     AusnProfile,
     Country,
     KzForm,
@@ -17,6 +18,7 @@ from rentab_core.models import (
     NpdClientType,
     NpdProfile,
     OsnoProfile,
+    Role,
     TaxProfile,
     UsnObject,
     UsnProfile,
@@ -68,3 +70,9 @@ def regime_label(profile: TaxProfile) -> str:
     else:
         name = f"ОУР РК, ИП (ИПН {kz_rate_pct('our.iit_ip')}%)"
     return name + kz_vat_suffix(profile.vat)
+
+
+def employee_title(name: str, role: Role) -> str:
+    """Сотрудник с ролью: «Юрист (Младший юрист)»; роль не повторяется, если это и есть имя."""
+    label = ROLE_LABELS[role]
+    return name if name == label else f"{name} ({label})"
