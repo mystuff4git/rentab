@@ -13,6 +13,7 @@ XLSX с живыми формулами (собираются ядром по н
 from __future__ import annotations
 
 import datetime as dt
+import re
 from decimal import Decimal
 
 import streamlit as st
@@ -52,6 +53,8 @@ XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PDF_MIME = "application/pdf"
 DATE_FORMAT = "%d.%m.%Y"
+# Знаки, которые нельзя использовать в имени файла (Windows), и пробелы.
+UNSAFE_FILE_CHARS = r'[\\/:*?"<>|\s]+'
 LEVERAGE_QUANTUM = Decimal("0.01")
 
 
@@ -349,6 +352,11 @@ def render_lines(estimate: Estimate) -> None:
             )
 
 
+def file_title(project_name: str) -> str:
+    """Название проекта для имени файла: без «:», «/» и других запрещённых в Windows знаков."""
+    return re.sub(UNSAFE_FILE_CHARS, "_", project_name.strip()).strip("_") or "project"
+
+
 def render_documents(scenario: Scenario, estimate: Estimate) -> None:
     """КП в PDF и DOCX и смета XLSX: файлы собираются ядром по нажатию кнопки."""
     st.markdown("#### Документы")
@@ -382,7 +390,7 @@ def render_documents(scenario: Scenario, estimate: Estimate) -> None:
             "В шапке КП не хватает названия фирмы или реквизитов.", icon=":material/info:"
         )
         col_link.page_link(nav.FIRM, label="Реквизиты", icon=":material/badge:")
-    title = estimate.project_name.strip() or "project"
+    title = file_title(estimate.project_name)
     col_pdf, col_docx, col_xlsx = st.columns(3)
     # Файлы собираются только по нажатию (data — функция): ядро возвращает байты в
     # памяти, Streamlit отдаёт их из памяти — на диск сервера ничего не пишется.

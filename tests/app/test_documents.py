@@ -106,6 +106,8 @@ def test_result_offers_three_documents(downloads: dict[str, bytes]) -> None:
     assert labels == ["КП (PDF)", "КП (DOCX)", "Смета (XLSX)"]
     names = sorted(name for name in downloads if name.startswith(("КП_", "Смета_")))
     assert [name.split("_")[0] for name in names] == ["КП", "КП", "Смета"]
+    # В имени файла нет пробелов и знаков, запрещённых в Windows.
+    assert all("Контрольный_проект_" in name for name in names)
     pdf = pdf_text(next(downloads[name] for name in names if name.endswith(".pdf")))
     for expected in (
         "ООО «Фирма»",

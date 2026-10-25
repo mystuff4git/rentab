@@ -68,6 +68,12 @@ CSS = f"""
 /* Шаги «Как начать» на главной. */
 [class*="st-key-step-"] {{ height: 100%; }}
 
+/* Логотип для КП — на белом листе, как в документе: в тёмной теме тёмный текст
+   прозрачного PNG иначе не виден. */
+.st-key-logo-preview {{
+  background: #FFFFFF; border-radius: 0.5rem; padding: 0.75rem; width: fit-content;
+}}
+
 /* Значок статуса в таблицах: цвет + форма (●, ▲, ✕), подпись — рядом. */
 .rt-flag {{ font-weight: 700; margin-right: 0.3rem; }}
 .rt-flag--good {{ color: var(--rt-good); }}

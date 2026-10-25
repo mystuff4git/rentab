@@ -85,6 +85,8 @@ MEMBER_RATE_MANUAL = state.MEMBER_RATE_MANUAL
 # Ставка взносов в карточке совпадает с расчётной, если разница меньше этого, п. п.
 RATE_MATCH_PCT = 0.005
 MEMBER_MESSAGE = "add_member_message"
+# Предел загрузчика логотипа, МБ (Streamlit принимает целые мегабайты).
+LOGO_UPLOAD_LIMIT_MB = 1
 
 # Типовые статьи накладных («Загрузить типовой шаблон», data/firm_expenses.json v0.3).
 OVERHEAD_TEMPLATE: tuple[str, ...] = (
@@ -922,7 +924,8 @@ with tab_letterhead:
         if logo is None:
             st.caption("Логотипа нет: шапка КП — только с реквизитами.")
         else:
-            st.image(logo.data, width=200)
+            with st.container(key="logo-preview"):
+                st.image(logo.data, width=200)
             st.button(
                 "Удалить логотип",
                 icon=":material/delete:",
@@ -934,6 +937,8 @@ with tab_letterhead:
             f"PNG или JPEG, до {MAX_LOGO_BYTES // 1024} КБ и {MAX_LOGO_SIDE_PX} px по стороне",
             type=["png", "jpg", "jpeg"],
             key=state.logo_uploader_key(),
+            # Браузер не отправит файл больше 1 МБ; предел 500 КБ проверяет ядро.
+            max_upload_size=LOGO_UPLOAD_LIMIT_MB,
             on_change=state.load_logo,
         )
     error = st.session_state.get(state.LOGO_ERROR)
