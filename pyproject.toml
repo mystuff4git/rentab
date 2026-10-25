@@ -50,6 +50,7 @@ dev = [
     "ruff>=0.8",
     "types-openpyxl>=3.1",
     "types-pyyaml>=6.0",
+    "types-reportlab>=4.2",
 ]
 # Зависимости замороженного v0.3 (legacy/), нужные characterization-тестам
 # (openpyxl уже есть в зависимостях ядра). Streamlit и plotly сюда не входят:
