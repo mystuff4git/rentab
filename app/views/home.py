@@ -37,8 +37,9 @@ USAGE_STATS_OPTION = "browser.gatherUsageStats"
 USAGE_STATS_NOTE = (
     "На этом сервере включена анонимная статистика использования Streamlit: браузер "
     "сообщает, какие элементы страницы работают, но не введённые в них значения (так "
-    "Streamlit описывает свою статистику). Для полной приватности запустите Rentab у "
-    "себя — через uv или Docker."
+    "Streamlit описывает свою статистику). На Streamlit Community Cloud страница вокруг "
+    "приложения подключает и свою веб-аналитику (Google Analytics, Heap, Segment). Для "
+    "полной приватности запустите Rentab у себя — через uv или Docker."
 )
 SOURCE_URL = "https://github.com/mystuff4git/rentab"
 JSON_MIME = "application/json"

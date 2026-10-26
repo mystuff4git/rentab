@@ -153,11 +153,14 @@ print(dashboard(estimate).profitability)  # profitable
   снова. Формат — [`docs/profile_format.md`](docs/profile_format.md).
 - Наружу уходит только дата — когда вы загружаете курсы ЦБ РФ и НБРК.
 - **Публичное демо** работает на Streamlit Community Cloud (Snowflake), за
-  пределами России и Казахстана. Cloud включает анонимную статистику
-  использования Streamlit поверх настроек приложения — по описанию Streamlit,
-  без введённых значений; главная демо об этом предупреждает. Для данных
-  реальной фирмы (оклады сотрудников — персональные данные) запускайте Rentab
-  у себя через uv или Docker: там статистика выключена.
+  пределами России и Казахстана. Само приложение обращается только к себе и в
+  анонимную статистику Streamlit, которую Cloud включает поверх настроек
+  приложения (по описанию Streamlit — без введённых значений). Страница Cloud
+  вокруг приложения подключает свою веб-аналитику: Google Analytics, Google Tag
+  Manager, Heap, Segment. Главная демо об этом предупреждает; проверка —
+  [`cloud_check.js`](docs/screenshots/v1.0/cloud_check.js). Для данных реальной
+  фирмы (оклады сотрудников — персональные данные) запускайте Rentab у себя
+  через uv или Docker: там нет ни статистики, ни сторонней аналитики.
 
 ## Ограничения и дисклеймер
 
@@ -253,7 +256,8 @@ disbursements, not firm revenue.
   to the server's disk (checked by tests with a write audit hook and a
   read-only container). Save your work as a JSON file. The public demo runs on
   Streamlit Community Cloud, which enables Streamlit's anonymous usage
-  statistics; run Rentab yourself for real firm data.
+  statistics, and its page around the app loads web analytics (Google
+  Analytics, Heap, Segment); run Rentab yourself for real firm data.
 - **Disclaimer:** an estimation tool, not tax or legal advice. 33 of 82 rate
   and fee records are marked `needs_review`, 8 need a lawyer's check for the
   firm's circumstances; project-level tax is an allocation of the firm's

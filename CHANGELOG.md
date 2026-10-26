@@ -45,7 +45,10 @@ Rentab v0.3): расчётное ядро переписано на `Decimal` и
 - `app/requirements.txt` для Streamlit Community Cloud (`uv export`), тест его
   актуальности; проверка «как на Cloud» (`tests/app/deploy_smoke.py`).
 - Главная: оговорка о статистике Streamlit, если сервер её включил (Streamlit
-  Community Cloud включает её сам); версия Rentab и ссылка на исходный код.
+  Community Cloud включает её сам, а страница Cloud вокруг приложения
+  подключает веб-аналитику); версия Rentab и ссылка на исходный код.
+- Публичное демо — https://rentab.streamlit.app/; проверка приватности и
+  работы демо — `docs/screenshots/v1.0/cloud_check.js`.
 - Аудит записи на диск для настоящего сервера (`tests/server_audit`),
   скриншоты v1.0, GIF и проверка задеплоенного демо — `docs/screenshots/v1.0/`.
 
