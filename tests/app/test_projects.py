@@ -74,6 +74,7 @@ def test_home_disclaimer_mentions_usage_stats_enabled_by_server() -> None:
     disclaimer = run_page(HOME).info[0].value
     assert disclaimer.startswith("**Данные не покидают вашу сессию.**")
     assert "включена анонимная статистика использования Streamlit" in disclaimer
+    assert "страница вокруг приложения подключает и свою веб-аналитику" in disclaimer
     assert "запустите Rentab у себя" in disclaimer
 
 

@@ -7,7 +7,9 @@
 // - демо-фирма загружается, NNE слайда 3 — 225 500 ₽ (golden-сценарий);
 // - КП в PDF и DOCX и смета XLSX скачиваются; шрифты в PDF встроены;
 // - сессии изолированы: новая сессия и перезагрузка страницы видят пустую фирму;
-// - к каким хостам обращается браузер (шрифтов со сторонних серверов нет).
+// - к каким хостам обращается браузер — отдельно само приложение и страница
+//   Streamlit Cloud вокруг него: приложение ходит только к себе и в статистику
+//   Streamlit, шрифтов со сторонних серверов нет.
 //
 // Запись на диск внутри контейнера Cloud снаружи не видна: её проверяют тот же
 // коммит в Docker с файловой системой только для чтения и аудит-хук (ADR 0010).
@@ -24,6 +26,10 @@ const VERSION = process.env.RENTAB_VERSION || '1.0.0';
 const VIEWPORT = { width: 1280, height: 900 };
 const WAKE_TIMEOUT = 240000;
 const THIRD_PARTY_FONTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
+// Статистика Streamlit (browser.gatherUsageStats; Cloud включает её сам).
+const STREAMLIT_STATS = ['data.streamlit.io', 'webhooks.fivetran.com'];
+// Приложение на *.streamlit.app — во фрейме с этим путём; страница вокруг — Cloud.
+const APP_FRAME_PATH = '/~/+/';
 
 function expect(condition, message) {
   if (!condition) throw new Error('CHECK FAILED: ' + message);
@@ -53,9 +59,23 @@ async function settle(frame) {
   await frame.waitForFunction(() => !document.querySelector('[data-testid="stStatusWidget"]'), null, { timeout: 60000 }).catch(() => {});
   await frame.page().waitForTimeout(800);
 }
-async function open(context, hosts) {
+// Хост запроса — в «app» (само приложение) или «wrapper» (страница Cloud вокруг).
+// Локально приложение — сама страница; на Cloud — только фрейм APP_FRAME_PATH.
+function record(hosts, request, cloud) {
+  const host = new globalThis.URL(request.url()).host;
+  let fromApp = !cloud;
+  if (cloud) {
+    try {
+      fromApp = new globalThis.URL(request.frame().url()).pathname.startsWith(APP_FRAME_PATH);
+    } catch (e) {
+      fromApp = false;
+    }
+  }
+  hosts[fromApp ? 'app' : 'wrapper'].add(host);
+}
+async function open(context, hosts, cloud) {
   const page = await context.newPage();
-  page.on('request', (request) => hosts.add(new globalThis.URL(request.url()).host));
+  page.on('request', (request) => record(hosts, request, cloud));
   await page.goto(URL, { waitUntil: 'domcontentloaded' });
   const app = await appFrame(page);
   await settle(app);
@@ -77,10 +97,10 @@ async function download(page, app, name, signature) {
 (async () => {
   if (!URL) throw new Error('задайте RENTAB_URL');
   const cloud = new globalThis.URL(URL).host.endsWith('.streamlit.app');
-  const hosts = new Set();
+  const hosts = { app: new Set(), wrapper: new Set() };
   const browser = await chromium.launch();
   const context = await browser.newContext({ viewport: VIEWPORT, acceptDownloads: true });
-  const { page, app } = await open(context, hosts);
+  const { page, app } = await open(context, hosts, cloud);
 
   const disclaimer = await app.locator('[data-testid="stAlertContentInfo"]').first().innerText();
   expect(disclaimer.includes('Данные не покидают вашу сессию.'), 'дисклеймер о приватности на главной');
@@ -103,7 +123,7 @@ async function download(page, app, name, signature) {
 
   // Другая сессия (новый контекст браузера) и перезагрузка — данных нет.
   const other = await browser.newContext({ viewport: VIEWPORT });
-  const second = await open(other, hosts);
+  const second = await open(other, hosts, cloud);
   expect(await second.app.getByText('Без названия · 1').count() >= 1, 'новая сессия: пустой проект, данных демо-фирмы нет');
   expect(await second.app.getByText('225 500 ₽').count() === 0, 'новая сессия не видит смету первой');
   await page.reload({ waitUntil: 'domcontentloaded' });
@@ -111,8 +131,12 @@ async function download(page, app, name, signature) {
   await settle(reloaded);
   expect(await reloaded.getByText('225 500 ₽').count() === 0, 'после перезагрузки страницы данных сессии нет');
 
-  const list = [...hosts].sort();
-  console.log('хосты, к которым обращался браузер:', list.join(', '));
-  expect(!list.some((host) => THIRD_PARTY_FONTS.includes(host)), 'шрифты — не со сторонних серверов');
+  const own = new globalThis.URL(URL).host;
+  const fromApp = [...hosts.app].sort();
+  const fromWrapper = [...hosts.wrapper].sort();
+  console.log('приложение обращалось к:', fromApp.join(', '));
+  if (fromWrapper.length) console.log('страница Streamlit Cloud вокруг приложения — к:', fromWrapper.join(', '));
+  expect(![...fromApp, ...fromWrapper].some((host) => THIRD_PARTY_FONTS.includes(host)), 'шрифты — не со сторонних серверов');
+  expect(fromApp.every((host) => host === own || STREAMLIT_STATS.includes(host)), 'приложение обращается только к себе и в статистику Streamlit');
   await browser.close();
 })().catch((e) => { console.error(e); process.exit(1); });
