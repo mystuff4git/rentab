@@ -16,7 +16,7 @@
   "format": "rentab",
   "schema_version": 1,
   "exported_at": "2026-10-22T15:00:00Z",
-  "app_version": "1.0.0.dev0",
+  "app_version": "1.0.0",
   "firm": {
     "name": "Демо-фирма «Слайд 3»",
     "jurisdiction": {

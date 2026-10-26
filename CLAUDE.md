@@ -48,7 +48,14 @@ python-docx и reportlab (КП, шрифты PT встроены); pytest + hypo
 - `src/rentab_core/rates/*.yaml` — ЕДИНСТВЕННОЕ место ставок, порогов (в RUB/KZT/МРП/МЗП/МРОТ),
   показателей по годам и шкал; у каждой записи: value, effective_from, source, source_url,
   needs_review, legal_review. `needs_review: false` без источника схема не пропустит.
-  `docs/rates_verification.md` генерируется из реестров и каталогов пошлин.
+  `docs/rates_verification.md` генерируется из реестров и каталогов пошлин; числа
+  `needs_review` и «к юристу» в README (раздел «Ограничения») правятся вручную.
+- Деплой (ADR 0010): `Dockerfile` и `compose.yaml` (только чтение, пользователь 10001);
+  Streamlit Community Cloud ставит `app/requirements.txt` — его генерирует `uv export`,
+  после `uv lock` перегенерировать (проверяет `tests/app/test_deploy.py`).
+  `tests/app/deploy_smoke.py` — страницы и документы вне окружения разработки (в CI —
+  в образе), `tests/server_audit/sitecustomize.py` — аудит записи на настоящем сервере.
+  Скриншоты, GIF и проверка демо — `docs/screenshots/v1.0/`.
 - `docs/methodology.md` — источник истины по формулам. Код и тесты соответствуют ему; при
   изменении формулы сначала правится документ.
 - `docs/ROADMAP.md` — прогресс по фазам. Обновлять в конце каждой сессии.
@@ -107,6 +114,8 @@ uv run python -m rentab_core.rates.verification docs/rates_verification.md  # п
 uv run python -m rentab_core.io docs/profile.schema.json  # после изменения моделей ядра
 uv run streamlit run app/Home.py # приложение (конфиг — .streamlit/config.toml в корне)
 uv run python -m tests.export_examples docs/examples --png  # примеры КП и сметы (PNG — pdftoppm)
+uv export --frozen --no-default-groups --group app --no-hashes --no-editable -o app/requirements.txt  # после uv lock
+docker compose up --build        # приложение в контейнере только для чтения
 ```
 
 ## legacy/ и characterization-тесты

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+from streamlit import config
 from streamlit.testing.v1 import AppTest
 
+from rentab_core import __version__
 from rentab_core.demo import TM_APPLICATION, TM_EXAMINATION, demo_firm, demo_workspace
 from rentab_core.duties import Quantity
 from rentab_core.io import Workspace, dumps, loads
@@ -31,6 +35,7 @@ from ui import nav, state
 
 V03_FIXTURE = Path(__file__).parents[1] / "fixtures" / "legacy" / "v03_firm_profile.json"
 PROJECT_PAGE = nav.PROJECT
+USAGE_STATS = "browser.gatherUsageStats"
 
 
 def demo_app(page: str = HOME) -> AppTest:
@@ -50,7 +55,26 @@ def test_home_shows_privacy_disclaimer() -> None:
     disclaimer = app.info[0].value
     assert disclaimer.startswith("**Данные не покидают вашу сессию.**")
     assert "ничего не записывает на диск сервера" in disclaimer
+    assert "статистика" not in disclaimer
     assert not app.session_state[state.TEAM]
+    assert any(f"Rentab {__version__} · " in caption.value for caption in app.caption)
+
+
+@pytest.fixture
+def usage_stats_on() -> Iterator[None]:
+    """Сервер включил статистику Streamlit, как Streamlit Community Cloud (ADR 0010)."""
+    before = config.get_option(USAGE_STATS)
+    config.set_option(USAGE_STATS, True)
+    yield
+    config.set_option(USAGE_STATS, before)
+
+
+@pytest.mark.usefixtures("usage_stats_on")
+def test_home_disclaimer_mentions_usage_stats_enabled_by_server() -> None:
+    disclaimer = run_page(HOME).info[0].value
+    assert disclaimer.startswith("**Данные не покидают вашу сессию.**")
+    assert "включена анонимная статистика использования Streamlit" in disclaimer
+    assert "запустите Rentab у себя" in disclaimer
 
 
 def test_demo_firm_fills_setup_and_project_pages() -> None:

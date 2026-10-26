@@ -8,7 +8,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Yaroslav Statsurin" }]
 requires-python = ">=3.11"
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Legal Industry",
     "Natural Language :: Russian",
     "Programming Language :: Python :: 3",
@@ -31,7 +31,9 @@ dependencies = [
 
 [project.urls]
 Repository = "https://github.com/mystuff4git/rentab"
-"Demo (v0.3)" = "https://rentab.streamlit.app/"
+Demo = "https://rentab.streamlit.app/"
+Documentation = "https://github.com/mystuff4git/rentab/blob/main/docs/methodology.md"
+Changelog = "https://github.com/mystuff4git/rentab/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 # Интерфейс на Streamlit (app/). Ядро эти пакеты не импортирует.

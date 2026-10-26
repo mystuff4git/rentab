@@ -1,0 +1,14 @@
+# В контекст сборки — только то, что нужно образу (Dockerfile): pyproject.toml,
+# uv.lock, README.md, LICENSE, src/, app/, .streamlit/config.toml.
+*
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src/
+!app/
+!.streamlit/config.toml
+# Файл зависимостей Streamlit Community Cloud образу не нужен: он ставит по uv.lock.
+app/requirements.txt
+**/__pycache__
+**/*.py[cod]

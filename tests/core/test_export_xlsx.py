@@ -64,7 +64,7 @@ def test_hourly_estimate_sheets() -> None:
     # Часы и ставка — числа, стоимость строки и итоги — формулы листа «Смета».
     assert [1, "Анализ", "Иванов (Партнёр)", 5, 15000, "=D7*E7"] in client
     assert not any("Возмещаемые" in label for label in labels(client))
-    assert [None, "НДС не облагается."] in client
+    assert [None, "Без НДС"] in client
     assert row_with(client, "Итого за услуги без НДС")[-1] == "=SUM(F7:F8)"
     assert row_with(client, "Итого к оплате")[-1] == "=F9"
     assert ["Смета действительна 30 дней с даты составления."] in client
