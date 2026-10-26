@@ -15,6 +15,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from rentab_core import __version__
 from rentab_core.demo import TM_APPLICATION, TM_EXAMINATION, demo_workspace
 from rentab_core.documents import Letterhead, OfferTerms, read_logo
 from rentab_core.duties import ApplicantCategory, Quantity, load_catalog
@@ -586,6 +587,8 @@ def test_schema_main_writes_file_or_stdout(
 PHASE4_FIXTURE = Path(__file__).parents[1] / "fixtures" / "profile" / "phase4_demo.json"
 # NNE смет демо-фирмы фазы 4: слайд 3 (план, факт), товарный знак, изобретение, потолок.
 PHASE4_NNE = (d(225_500), d(-2_200), d(58_800), d(49_125), d(32_200))
+# Версия Rentab, которая выгрузила файл фазы 4; повторная выгрузка пишет текущую.
+PHASE4_APP_VERSION = "1.0.0.dev0"
 
 
 def test_phase4_file_loads_unchanged() -> None:
@@ -606,7 +609,11 @@ def test_phase4_file_loads_unchanged() -> None:
     )
     assert tuple(round_to(value) for value in nne) == PHASE4_NNE
     # Повторная выгрузка совпадает с файлом фазы 4: новые поля без значения не пишутся.
-    assert dumps(workspace, exported_at=EXPORTED_AT) == data
+    expected = data.replace(
+        f'"app_version": "{PHASE4_APP_VERSION}"'.encode(),
+        f'"app_version": "{__version__}"'.encode(),
+    )
+    assert dumps(workspace, exported_at=EXPORTED_AT) == expected
 
 
 def test_actuals_round_trip_and_are_omitted_when_empty() -> None:
