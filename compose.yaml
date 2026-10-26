@@ -1,0 +1,22 @@
+# Rentab локально в контейнере (ADR 0010):
+#
+#   docker compose up --build    # http://localhost:8501, остановить — Ctrl+C
+#
+# Приложение ничего не пишет на диск: файловая система контейнера — только для
+# чтения, запись возможна лишь во временный /tmp в памяти (его использует openpyxl
+# при сборке сметы XLSX). Порт открыт только на этом компьютере (127.0.0.1); чтобы
+# открыть его в сети, уберите «127.0.0.1:».
+services:
+  rentab:
+    build: .
+    image: rentab:1.0.0
+    ports:
+      - "127.0.0.1:8501:8501"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

@@ -52,3 +52,61 @@ jobs:
 
       - name: pytest
         run: uv run pytest
+
+  # Образ из Dockerfile (ADR 0010): собирается, работает с файловой системой только
+  # для чтения от непривилегированного пользователя, страницы и документы — те же.
+  docker:
+    name: Docker (образ только для чтения)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Сборка образа
+        run: |
+          docker compose config --quiet
+          docker build --tag rentab:ci .
+
+      - name: Пользователь 10001, без инструментов разработки
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' rentab:ci)" = "rentab:rentab"
+          test "$(docker run --rm rentab:ci id -u)" = 10001
+          if docker run --rm rentab:ci python -c "import pytest" 2>/dev/null; then
+            echo "::error::в образе есть pytest: dev-группа попала в образ"
+            exit 1
+          fi
+          size=$(docker image inspect --format '{{.Size}}' rentab:ci)
+          echo "Размер образа: $((size / 1024 / 1024)) МБ" >> "$GITHUB_STEP_SUMMARY"
+
+      # Страницы с демо-фирмой и документы, побайтно равные docs/examples; аудит-хук
+      # записи на диск (tests/app/deploy_smoke.py).
+      - name: Страницы и документы в контейнере (только чтение, без сети)
+        run: >
+          docker run --rm --network none --read-only --tmpfs /tmp:size=64m,mode=1777
+          --cap-drop ALL --security-opt no-new-privileges
+          --volume "$PWD/tests:/app/tests:ro" --volume "$PWD/docs/examples:/app/docs/examples:ro"
+          rentab:ci python -m tests.app.deploy_smoke
+
+      - name: Сервер в контейнере — healthcheck, страница, шрифты
+        run: |
+          docker run --detach --name rentab --read-only --tmpfs /tmp:size=64m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges --publish 127.0.0.1:8501:8501 rentab:ci
+          status=starting
+          for _ in $(seq 1 60); do
+            status=$(docker inspect --format '{{.State.Health.Status}}' rentab)
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          test "$status" = healthy
+          test "$(curl -fsS http://127.0.0.1:8501/_stcore/health)" = ok
+          curl -fsS http://127.0.0.1:8501/ | grep -q "<title>Streamlit</title>"
+          curl -fsS -o /dev/null http://127.0.0.1:8501/app/static/fonts/pt-sans-cyrillic-400-normal.woff2
+
+      - name: Лог сервера без предупреждений и ошибок
+        if: always()
+        run: |
+          docker logs rentab > "$RUNNER_TEMP/server.log" 2>&1 || true
+          cat "$RUNNER_TEMP/server.log"
+          if grep -Eiq "warning|error|traceback" "$RUNNER_TEMP/server.log"; then
+            echo "::error::в логе сервера есть предупреждения или ошибки"
+            exit 1
+          fi
