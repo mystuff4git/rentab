@@ -15,7 +15,7 @@ IP-юридического консалтинга (РФ, РК) по метод�
     kpi = dashboard(estimate)
 """
 
-__version__ = "1.0.0.dev0"
+__version__ = "1.0.0"
 
 from rentab_core.analysis.dashboard import Dashboard, dashboard
 from rentab_core.errors import (

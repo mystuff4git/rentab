@@ -39,6 +39,7 @@ from openpyxl.writer.excel import ExcelWriter
 
 from rentab_core.documents import DEFAULT_OFFER_VALIDITY_DAYS
 from rentab_core.errors import CurrencyConversionError
+from rentab_core.export.offer import NO_VAT
 from rentab_core.export.style import BORDO, PARCHMENT, stable_zip
 from rentab_core.formatting import plural
 from rentab_core.fx import convert
@@ -102,7 +103,8 @@ VALIDITY_NOTE = "Смета действительна {days} с даты сос
 DAY_FORMS = ("день", "дня", "дней")
 FIXED_PRICE_NOTE = "* Стоимость работ зафиксирована и не зависит от фактически затраченных часов."
 DISBURSEMENTS_TITLE = "Возмещаемые расходы (пошлины и иные платежи)"
-NO_VAT_NOTE = "НДС не облагается."
+# Как в КП: смета и предложение называют отсутствие НДС одинаково.
+NO_VAT_NOTE = NO_VAT
 
 # Значения на листе «Исходные данные», по которым ветвятся формулы.
 BASE_LABELS: Mapping[TaxBase, str] = {

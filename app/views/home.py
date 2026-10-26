@@ -14,6 +14,7 @@ import re
 
 import streamlit as st
 
+from rentab_core import __version__
 from rentab_core.demo import demo_workspace
 from rentab_core.errors import ProfileImportError
 from rentab_core.io import ImportResult, NoteLevel, Workspace, dumps, loads
@@ -30,6 +31,16 @@ PRIVACY_DISCLAIMER = (
     "Чтобы вернуться к работе позже, скачайте файл JSON и загрузите его снова. "
     "Наружу уходит только дата — при загрузке курсов ЦБ РФ и НБРК."
 )
+# Streamlit Community Cloud включает статистику Streamlit, что бы ни было в config.toml
+# (ADR 0010): тогда дисклеймер говорит и о ней.
+USAGE_STATS_OPTION = "browser.gatherUsageStats"
+USAGE_STATS_NOTE = (
+    "На этом сервере включена анонимная статистика использования Streamlit: браузер "
+    "сообщает, какие элементы страницы работают, но не введённые в них значения (так "
+    "Streamlit описывает свою статистику). Для полной приватности запустите Rentab у "
+    "себя — через uv или Docker."
+)
+SOURCE_URL = "https://github.com/mystuff4git/rentab"
 JSON_MIME = "application/json"
 # Загрузчик файла пересоздаётся с новым ключом после загрузки: так он очищается.
 IMPORT_NONCE = "import_nonce"
@@ -44,6 +55,13 @@ EXPORT_PROJECTS = "export_include_projects"
 NOTE_ICONS = {NoteLevel.INFO: "ℹ️", NoteLevel.WARNING: "⚠️"}
 # Имя файла выгрузки: название фирмы без знаков препинания, не длиннее 40 символов.
 FILE_NAME_MAX = 40
+
+
+def privacy_disclaimer() -> str:
+    """Дисклеймер о приватности; если сервер включил статистику Streamlit — с оговоркой."""
+    if st.get_option(USAGE_STATS_OPTION):
+        return f"{PRIVACY_DISCLAIMER}\n\n{USAGE_STATS_NOTE}"
+    return PRIVACY_DISCLAIMER
 
 
 def uploader_key() -> str:
@@ -299,7 +317,7 @@ st.markdown(
     "биллируемого часа, утилизация, рычаг, чистая прибыль (NNE). НДС начисляется сверху, "
     "пошлины — возмещаемые расходы вне выручки."
 )
-st.info(PRIVACY_DISCLAIMER, icon="🔒")
+st.info(privacy_disclaimer(), icon="🔒")
 
 st.subheader("Как начать")
 render_start()
@@ -330,4 +348,7 @@ with col_export:
 st.subheader("Проекты сессии")
 render_projects()
 
-st.caption("Rentab · наследник ВКР НИУ ВШЭ (v0.3) · Python · Streamlit · Plotly · шрифты ParaType")
+st.caption(
+    f"Rentab {__version__} · [исходный код]({SOURCE_URL}) (MIT) · наследник ВКР НИУ ВШЭ (v0.3) · "
+    "Python · Streamlit · Plotly · шрифты ParaType"
+)
