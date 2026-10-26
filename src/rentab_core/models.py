@@ -437,10 +437,17 @@ class Stage(CoreModel):
 
     Пирамида «партнёр проверяет 2 ч, юрист делает 8 ч» — один этап с двумя
     назначениями (L-05).
+
+    Attributes:
+        name: Название; уникально в проекте.
+        assignments: Назначения.
+        description: Что получает клиент на этапе — строка под названием этапа
+            в КП; в расчёт не входит.
     """
 
     name: str
     assignments: tuple[Assignment, ...] = ()
+    description: str = ""
 
 
 class DisbursementKind(StrEnum):

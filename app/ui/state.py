@@ -30,6 +30,13 @@ from pydantic import ValidationError
 
 from rentab_core.analysis.plan_fact import actuals_from_plan, plan_pairs
 from rentab_core.analysis.sensitivity import DEFAULT_TORNADO_DEVIATION, WhatIf
+from rentab_core.documents import (
+    DEFAULT_OFFER_VALIDITY_DAYS,
+    Letterhead,
+    LogoError,
+    OfferTerms,
+    read_logo,
+)
 from rentab_core.duties import (
     DEFAULT_QUANTITY,
     QUANTITY_DEFAULTS,
@@ -169,6 +176,35 @@ MEMBER_RATE_MANUAL = "add_member_rate_manual"
 EDIT_MEMBER = "edit_member"
 COMPENSATION_SALARY = "salary"
 COMPENSATION_MONTHLY = "monthly"
+# Бланк фирмы для КП (шаг «Фирма», вкладка «Реквизиты и логотип»): поле
+# Letterhead → ключ виджета. Логотип — модель `Logo` под LH_LOGO; загрузчик
+# получает новый ключ (номер растёт), когда логотип удалён или заменён файлом.
+LETTERHEAD_KEYS: Mapping[str, str] = {
+    "requisites": "lh_requisites",
+    "address": "lh_address",
+    "phone": "lh_phone",
+    "email": "lh_email",
+    "website": "lh_website",
+    "signatory_name": "lh_signatory_name",
+    "signatory_position": "lh_signatory_position",
+    "bank_details": "lh_bank_details",
+}
+LH_LOGO = "lh_logo"
+LOGO_ERROR = "lh_logo_error"
+LOGO_UPLOADER_PREFIX = "lh_logo_uploader_"
+LOGO_UPLOADER_NONCE = "lh_logo_uploader_nonce"
+# Условия КП (шаг «Проект»): поле OfferTerms → ключ виджета.
+OFFER_KEYS: Mapping[str, str] = {
+    "number": "offer_number",
+    "validity_days": "offer_validity_days",
+    "payment_terms": "offer_payment_terms",
+    "execution_term": "offer_execution_term",
+    "extra_terms": "offer_extra_terms",
+}
+OFFER_VALIDITY = OFFER_KEYS["validity_days"]
+# Описание этапа для КП: ключ виджета — проект и название этапа (не номер: после
+# удаления этапа номера сдвигаются, а браузер хранит значение у прежнего ключа).
+STAGE_DESCRIPTION_PREFIX = "stage_desc_"
 # Проекты сессии: слоты, активный проект, счётчик номеров, переключатель.
 PROJECTS = "projects"
 ACTIVE_PROJECT = "active_project"
@@ -220,6 +256,7 @@ PROJECT_KEYS: tuple[str, ...] = (
     ACTUAL_BILLED,
     TORNADO_PCT,
     COMPARE_CAP,
+    *OFFER_KEYS.values(),
 )
 PROJECT_PREFIXES: tuple[str, ...] = (
     DUTY_QUANTITY_PREFIX,
@@ -254,6 +291,9 @@ FIRM_KEYS: tuple[str, ...] = (
     FX_ERROR,
     OVERHEADS_EDITOR,
     OVERHEADS_EDITOR_BASE,
+    *LETTERHEAD_KEYS.values(),
+    LH_LOGO,
+    LOGO_ERROR,
 )
 
 ItemT = TypeVar("ItemT")
@@ -297,6 +337,8 @@ PERSISTENT_WIDGET_KEYS: tuple[str, ...] = (
     COMPARE_METRIC,
     COMPARE_ALL_VARIANTS,
     RESULT_TAB,
+    *LETTERHEAD_KEYS.values(),
+    *OFFER_KEYS.values(),
 )
 # Префиксы ключей виджетов, которые создаются по стране, единице или фактору.
 PERSISTENT_WIDGET_PREFIXES: tuple[str, ...] = (
@@ -348,6 +390,7 @@ def init_defaults() -> None:
     st.session_state.setdefault(CUSTOM_EXPENSES, [])
     st.session_state.setdefault(ACTUAL_HOURS, None)
     st.session_state.setdefault(TORNADO_PCT, DEFAULT_TORNADO_PCT)
+    st.session_state.setdefault(OFFER_VALIDITY, DEFAULT_OFFER_VALIDITY_DAYS)
     for key in WHATIF_KEYS:
         st.session_state.setdefault(key, 0)
     projects()
@@ -517,6 +560,55 @@ def firm_values(value: Firm, quote: RatesQuote | None = None) -> dict[str, Any]:
     if quote is not None:
         result |= {FX_QUOTE: quote, FX_DATE: quote.requested}
     return result
+
+
+# ---------------------------------------------------------------------------
+# Бланк фирмы для КП
+# ---------------------------------------------------------------------------
+def letterhead(values: Values | None = None) -> Letterhead | None:
+    """Реквизиты и логотип с шага «Фирма»; None — ничего не заполнено."""
+    values = _values(values)
+    result = Letterhead(
+        **{field: text(key, values).strip() for field, key in LETTERHEAD_KEYS.items()},
+        logo=values.get(LH_LOGO),
+    )
+    return None if result == Letterhead() else result
+
+
+def letterhead_values(value: Letterhead | None) -> dict[str, Any]:
+    """Значения ключей вкладки «Реквизиты и логотип» для бланка."""
+    value = value or Letterhead()
+    result: dict[str, Any] = {key: getattr(value, field) for field, key in LETTERHEAD_KEYS.items()}
+    return result | {LH_LOGO: value.logo, LOGO_ERROR: None}
+
+
+def logo_uploader_key() -> str:
+    """Ключ загрузчика логотипа: номер растёт, когда логотип удалён или заменён файлом."""
+    return f"{LOGO_UPLOADER_PREFIX}{int(st.session_state.get(LOGO_UPLOADER_NONCE, 0))}"
+
+
+def _renew_logo_uploader() -> None:
+    st.session_state[LOGO_UPLOADER_NONCE] = int(st.session_state.get(LOGO_UPLOADER_NONCE, 0)) + 1
+
+
+def load_logo() -> None:
+    """Колбэк загрузчика: проверить файл ядром и сохранить логотип в сессии."""
+    uploaded = st.session_state.get(logo_uploader_key())
+    if uploaded is None:
+        return
+    try:
+        st.session_state[LH_LOGO] = read_logo(uploaded.getvalue())
+    except LogoError as exc:
+        st.session_state[LOGO_ERROR] = str(exc)
+        return
+    st.session_state[LOGO_ERROR] = None
+
+
+def remove_logo() -> None:
+    """Колбэк: удалить логотип; загрузчик — новый, без прежнего файла."""
+    st.session_state[LH_LOGO] = None
+    st.session_state[LOGO_ERROR] = None
+    _renew_logo_uploader()
 
 
 # ---------------------------------------------------------------------------
@@ -730,6 +822,39 @@ def project_actuals(values: Values, stage_names: set[str]) -> ProjectActuals | N
     )
 
 
+def offer_terms(values: Values | None = None) -> OfferTerms | None:
+    """Условия КП с шага «Проект»; None — условия по умолчанию."""
+    values = _values(values)
+    result = OfferTerms(
+        number=text(OFFER_KEYS["number"], values).strip(),
+        validity_days=int(values.get(OFFER_VALIDITY, DEFAULT_OFFER_VALIDITY_DAYS)),
+        payment_terms=text(OFFER_KEYS["payment_terms"], values).strip(),
+        execution_term=text(OFFER_KEYS["execution_term"], values).strip(),
+        extra_terms=text(OFFER_KEYS["extra_terms"], values).strip(),
+    )
+    return None if result == OfferTerms() else result
+
+
+def offer_values(value: OfferTerms | None) -> dict[str, Any]:
+    """Значения ключей блока «Условия КП» для условий проекта."""
+    value = value or OfferTerms()
+    return {key: getattr(value, field) for field, key in OFFER_KEYS.items()}
+
+
+def stage_description_key(stage_name: str) -> str:
+    """Ключ поля «Описание для КП» этапа активного проекта."""
+    return f"{STAGE_DESCRIPTION_PREFIX}{active_id()}_{stage_name}"
+
+
+def set_stage_description(stage_name: str) -> None:
+    """Колбэк поля описания: новое описание — в модель этапа."""
+    current = stages()
+    description = str(st.session_state.get(stage_description_key(stage_name), "")).strip()
+    for index, stage in enumerate(current):
+        if stage.name == stage_name:
+            current[index] = stage.model_copy(update={"description": description})
+
+
 def project_record(values: Values | None = None, *, strict: bool = True) -> ProjectRecord:
     """Проект и выбранные пошлины из значений проекта.
 
@@ -762,7 +887,7 @@ def project_record(values: Values | None = None, *, strict: bool = True) -> Proj
         selection = duty_selection(country, values)
         if selection != DutySelection():
             duties[country] = selection
-    return ProjectRecord(project=project, duties=duties)
+    return ProjectRecord(project=project, duties=duties, offer=offer_terms(values))
 
 
 def slider_pct(pct: int) -> int:
@@ -812,6 +937,7 @@ def project_values(record: ProjectRecord) -> dict[str, Any]:
         TORNADO_PCT: DEFAULT_TORNADO_PCT,
         COMPARE_CAP: 0.0,
         **dict.fromkeys(WHATIF_KEYS, 0),
+        **offer_values(record.offer),
     }
     if isinstance(project.pricing, CappedPricing):
         result |= {PRICING_MODEL: PRICING_CAPPED, CAP_AMOUNT: float(project.pricing.cap)}
@@ -1181,7 +1307,7 @@ def delete_project() -> None:
 
 def has_user_data() -> bool:
     """Есть ли в сессии введённые данные, которые заменит загрузка."""
-    if team() or overheads():
+    if team() or overheads() or letterhead() is not None:
         return True
     empty = ProjectRecord()
     return any(project_record(slot_values(slot), strict=False) != empty for slot in projects())
@@ -1192,6 +1318,7 @@ def workspace() -> Workspace:
     return Workspace(
         firm=firm(),
         rates_quote=fx_quote(),
+        letterhead=letterhead(),
         projects=tuple(project_record(slot_values(slot), strict=False) for slot in projects()),
     )
 
@@ -1213,6 +1340,9 @@ def apply_workspace(value: Workspace) -> list[str]:
         st.session_state.pop(key, None)
     for key, item in firm_values(value.firm, value.rates_quote).items():
         st.session_state[key] = item
+    for key, item in letterhead_values(value.letterhead).items():
+        st.session_state[key] = item
+    _renew_logo_uploader()
     records = value.projects or (ProjectRecord(),)
     slots: list[ProjectSlot] = []
     for index, record in enumerate(records):

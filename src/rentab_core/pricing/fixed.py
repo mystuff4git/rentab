@@ -56,12 +56,14 @@ def price_without_min_tax(
         raise _unreachable(terms, target_margin, terms.rate)
     if terms.base == TaxBase.PROFIT:
         return (costs * (ONE - terms.rate) + terms.rate * nondeductible) / denominator
-    price = (costs - contributions) / denominator
+    # Знаменатель второй ветви не меньше 1 − m* − t > 0: предел κ только уменьшает
+    # налог. При κ = 0 (АУСН, НПД) взносы налог не уменьшают, и вторая ветвь
+    # C / (1 − m* − t) не меньше первой (L-23).
     cap = terms.contributions_deduction_cap
-    if cap > 0:
-        # Знаменатель не меньше 1 − m* − t > 0: предел κ только уменьшает налог.
-        price = max(price, costs / (ONE - target_margin - (ONE - cap) * terms.rate))
-    return price
+    return max(
+        (costs - contributions) / denominator,
+        costs / (ONE - target_margin - (ONE - cap) * terms.rate),
+    )
 
 
 def cost_plus_price(

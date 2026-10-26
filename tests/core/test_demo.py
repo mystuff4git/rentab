@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal
 
 import pytest
@@ -10,6 +11,8 @@ from rentab_core import calculate_estimate
 from rentab_core.analysis.plan_fact import plan_fact
 from rentab_core.costing import employee_cost, overhead_rate
 from rentab_core.demo import demo_firm, demo_workspace
+from rentab_core.documents import logo_size
+from rentab_core.export import offer_document
 from rentab_core.io import dumps, loads
 from rentab_core.models import CappedPricing, FixedPricing, HourlyPricing
 from rentab_core.money import Currency, round_to
@@ -103,3 +106,27 @@ def test_every_project_calculates_and_round_trips() -> None:
     for record in workspace.projects:
         assert calculate_estimate(record.scenario(workspace.firm)).nne != 0
     assert loads(dumps(workspace)).workspace == workspace
+
+
+def test_demo_letterhead_offers_and_stage_descriptions() -> None:
+    # Фаза 7: бланк с вымышленными реквизитами и логотипом, условия КП у типовых проектов.
+    workspace = demo_workspace()
+    letterhead = workspace.letterhead
+    assert letterhead is not None
+    assert letterhead.requisites.startswith("ИНН 0000000000")
+    assert letterhead.logo is not None
+    assert logo_size(letterhead.logo) == (765, 201)
+    offers = [record.offer for record in workspace.projects]
+    assert offers[0] is None
+    assert [offer.number for offer in offers[1:] if offer is not None] == ["КП-2", "КП-3", "КП-4"]
+    for record in workspace.projects[1:]:
+        assert all(stage.description for stage in record.project.stages)
+        scenario = record.scenario(workspace.firm)
+        document = offer_document(
+            scenario,
+            calculate_estimate(scenario),
+            issue_date=dt.date(2026, 10, 25),
+            letterhead=letterhead,
+            terms=record.offer,
+        )
+        assert document.stages[0].description == record.project.stages[0].description

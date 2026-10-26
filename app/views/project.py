@@ -1,7 +1,8 @@
 """Шаг 2 «Проект»: этапы и исполнители, цена, НДС, пошлины и расходы.
 
-Страница собирает этапы с исполнителями (на этапе их может быть несколько),
-пошлины и расходы проекта, модель цены и режим НДС. Внизу — сводка сметы по
+Страница собирает этапы с исполнителями (на этапе их может быть несколько)
+и описаниями для КП, пошлины и расходы проекта, модель цены, режим НДС и
+условия КП. Внизу — сводка сметы по
 текущим данным (`rentab_core.calculate_estimate`): кнопки «Рассчитать» нет,
 смета пересчитывается при каждом изменении. Подробности — на шаге
 «Результат». Вся математика — в ядре; здесь только ввод и показ. Проектов в
@@ -15,6 +16,7 @@ import streamlit as st
 from rentab_core import CurrencyConversionError
 from rentab_core.analysis.stages import classify
 from rentab_core.analysis.team import blended_rate, leverage
+from rentab_core.documents import MAX_OFFER_VALIDITY_DAYS
 from rentab_core.duties import (
     APPLICANT_CATEGORY_LABELS,
     QUANTITY_DEFAULTS,
@@ -65,8 +67,9 @@ LEVERAGE_QUANTUM = to_decimal("0.01")
 
 st.title("Проект")
 st.caption(
-    "Шаг 2: этапы и исполнители, модель цены и НДС, пошлины и расходы. Смета "
-    "пересчитывается сразу — сводка внизу, подробности на шаге «Результат»."
+    "Шаг 2: этапы и исполнители, модель цены и НДС, пошлины и расходы, условия КП. "
+    "Смета пересчитывается сразу — сводка внизу, подробности и документы на шаге "
+    "«Результат»."
 )
 require_firm("project")
 team = state.team()
@@ -207,6 +210,15 @@ for stage_idx, stage in enumerate(stages):
     total = decimal_sum(a.hours for a in stage.assignments)
     with st.container(border=True, key=f"stage-{stage_idx}"):
         st.markdown(f"**{stage_idx + 1}. {stage.name}** · {hours_label(total)}")
+        st.text_input(
+            "Описание для КП",
+            value=stage.description,
+            key=state.stage_description_key(stage.name),
+            on_change=state.set_stage_description,
+            args=(stage.name,),
+            placeholder="Что получит клиент: отчёт, заявка, ответ экспертизе…",
+            label_visibility="collapsed",
+        )
         for assignment_idx, assignment in enumerate(stage.assignments):
             member = team_by_name.get(assignment.employee)
             col_who, col_hours, col_value, col_delete = st.columns(
@@ -529,6 +541,36 @@ with st.expander("Расходы проекта — пошлины, субпод
 # ===========================================================================
 # БЛОК 5 — СВОДКА СМЕТЫ ПО ТЕКУЩИМ ДАННЫМ
 # ===========================================================================
+with st.expander("Условия КП — номер, срок действия, оплата (необязательно)"):
+    st.caption(
+        "Попадают в коммерческое предложение на шаге «Результат». Модель цены, НДС и "
+        "пошлины КП описывает сам; реквизиты и подписант — на шаге «Фирма»."
+    )
+    col_number, col_validity = st.columns([2, 1])
+    col_number.text_input("Номер КП", key=state.OFFER_KEYS["number"], placeholder="КП-7")
+    col_validity.number_input(
+        "Срок действия, дней",
+        min_value=1,
+        max_value=MAX_OFFER_VALIDITY_DAYS,
+        step=1,
+        key=state.OFFER_VALIDITY,
+    )
+    st.text_input(
+        "Порядок оплаты",
+        key=state.OFFER_KEYS["payment_terms"],
+        placeholder="50% — аванс, 50% — по завершении работ",
+    )
+    st.text_input(
+        "Срок выполнения",
+        key=state.OFFER_KEYS["execution_term"],
+        placeholder="подача заявки — 20 рабочих дней после аванса",
+    )
+    st.text_area(
+        "Дополнительные условия (каждое — с новой строки)",
+        key=state.OFFER_KEYS["extra_terms"],
+        height=80,
+    )
+
 st.subheader("Смета проекта")
 if not project_name.strip():
     st.caption("Название проекта попадёт в смету XLSX и в список проектов.")

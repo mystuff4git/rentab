@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import io
 from decimal import Decimal
+
+from PIL import Image
 
 from rentab_core.models import (
     ActualHours,
@@ -140,3 +143,10 @@ def actuals(*rows: tuple[str, str, str | int], billed: str | int | None = None) 
         ),
         billed=None if billed is None else d(billed),
     )
+
+
+def image_bytes(width: int = 40, height: int = 20, fmt: str = "PNG") -> bytes:
+    """Картинка для логотипа: PNG или JPEG заданного размера в памяти."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height), (122, 31, 46)).save(buffer, format=fmt)
+    return buffer.getvalue()

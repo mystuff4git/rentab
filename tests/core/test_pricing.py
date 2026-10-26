@@ -190,6 +190,17 @@ def test_cost_plus_price_with_contributions_and_profit_reward() -> None:
     assert rewarded == (d(35_200) * d("0.85") + d("0.15") * d(8_000)) / d("0.55")
 
 
+@pytest.mark.parametrize("profile", [AusnProfile(), NpdProfile()], ids=["ausn", "npd"])
+def test_contributions_do_not_lower_price_without_deduction(profile: TaxProfile) -> None:
+    # L-23: при κ = 0 взносы налог не уменьшают — цена та же, что без них, и маржа = цели.
+    terms = tax_terms(profile)
+    costs, margin = d(11_904), d("0.30")
+    price = cost_plus_price(terms, costs, margin, contributions=d(2_747))
+    assert price == cost_plus_price(terms, costs, margin) == costs / (1 - margin - terms.rate)
+    tax = calculate_tax(terms, price, costs, contributions=d(2_747))
+    assert price - costs - tax.tax == margin * price
+
+
 @given(
     cost=st.integers(min_value=1, max_value=10**8),
     share=st.integers(min_value=0, max_value=100),
@@ -203,6 +214,7 @@ def test_price_with_contributions_and_reward_hits_target_margin(
     part = costs * share / 100  # S и N — часть трудозатрат, не больше C
     for terms, kwargs in (
         (USN_6, {"contributions": part}),
+        (tax_terms(AusnProfile()), {"contributions": part}),
         (USN_15, {"nondeductible": part}),
         (tax_terms(OsnoProfile()), {"nondeductible": part}),
     ):

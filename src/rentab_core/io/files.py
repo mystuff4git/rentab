@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from pydantic_core import ErrorDetails
 
 from rentab_core import __version__
+from rentab_core.documents import Letterhead, LogoError, read_logo
 from rentab_core.duties import load_catalog
 from rentab_core.errors import ProfileImportError
 from rentab_core.io.migrations import ImportNote, RawProfile, upgrade, warning
@@ -69,9 +70,13 @@ VALIDATION_MESSAGES: Mapping[str, str] = {
     "model_type": "должно быть объектом",
 }
 VALUE_ERROR_PREFIX = "Value error, "
-# Поля проекта, появившиеся после первой версии схемы: без значения они не
-# пишутся, поэтому файл без факта (фаза 5) читает и приложение фазы 4.
-OMIT_WHEN_EMPTY: tuple[str, ...] = ("actuals",)
+# Поля, появившиеся после первой версии схемы: без значения они не пишутся,
+# поэтому файл без факта (фаза 5) и без КП (фаза 7) читает и приложение фазы 4.
+# Ключ — поле, значение — что считается «без значения».
+OMIT_WHEN_EMPTY_FILE: Mapping[str, Any] = {"letterhead": None}
+OMIT_WHEN_EMPTY_RECORD: Mapping[str, Any] = {"offer": None}
+OMIT_WHEN_EMPTY_PROJECT: Mapping[str, Any] = {"actuals": None}
+OMIT_WHEN_EMPTY_STAGE: Mapping[str, Any] = {"description": ""}
 
 
 class ImportResult(CoreModel):
@@ -116,6 +121,13 @@ def _record_for_export(record: ProjectRecord) -> ProjectRecord:
     return record.model_copy(update={"duties": duties})
 
 
+def _omit_empty(raw: dict[str, Any], fields: Mapping[str, Any]) -> None:
+    """Убирает из объекта JSON поля, равные своему «пустому» значению."""
+    for field, empty in fields.items():
+        if raw.get(field, empty) == empty:
+            raw.pop(field, None)
+
+
 def dumps(
     workspace: Workspace,
     *,
@@ -127,7 +139,7 @@ def dumps(
     Args:
         workspace: Фирма, курсы и проекты.
         exported_at: Время выгрузки для конверта (справочно).
-        include_projects: Выгружать проекты; иначе — только фирму и курсы.
+        include_projects: Выгружать проекты; иначе — только фирму, курсы и бланк.
     """
     projects = workspace.projects if include_projects else ()
     profile = ProfileFile(
@@ -135,13 +147,16 @@ def dumps(
         app_version=__version__,
         firm=workspace.firm,
         rates_quote=workspace.rates_quote,
+        letterhead=workspace.letterhead,
         projects=tuple(_record_for_export(record) for record in projects),
     )
     raw = profile.model_dump(mode="json")
+    _omit_empty(raw, OMIT_WHEN_EMPTY_FILE)
     for record in raw["projects"]:
-        for field in OMIT_WHEN_EMPTY:
-            if record["project"][field] is None:
-                del record["project"][field]
+        _omit_empty(record, OMIT_WHEN_EMPTY_RECORD)
+        _omit_empty(record["project"], OMIT_WHEN_EMPTY_PROJECT)
+        for stage in record["project"]["stages"]:
+            _omit_empty(stage, OMIT_WHEN_EMPTY_STAGE)
     text = json.dumps(raw, ensure_ascii=False, indent=2)
     return (text + "\n").encode(FILE_ENCODING)
 
@@ -283,14 +298,31 @@ def _check_assignments(
                 )
 
 
+def _check_logo(letterhead: Letterhead | None, notes: list[ImportNote]) -> Letterhead | None:
+    """Логотип, который не открывается как картинка, не загружается — с предупреждением."""
+    if letterhead is None or letterhead.logo is None:
+        return letterhead
+    try:
+        read_logo(letterhead.logo.data)
+    except LogoError as exc:
+        notes.append(warning(f"Логотип из файла не загружен: {exc}"))
+        return letterhead.model_copy(update={"logo": None})
+    return letterhead
+
+
 def _review(workspace: Workspace, notes: list[ImportNote]) -> Workspace:
-    """Сверка загруженных проектов с каталогами пошлин и командой."""
+    """Сверка загруженных проектов с каталогами пошлин и командой, проверка логотипа."""
     projects = []
     for index, record in enumerate(workspace.projects):
         title = project_title(record, index)
         _check_assignments(record, title, workspace.firm, notes)
         projects.append(record.model_copy(update={"duties": _check_duties(record, title, notes)}))
-    return workspace.model_copy(update={"projects": tuple(projects)})
+    return workspace.model_copy(
+        update={
+            "projects": tuple(projects),
+            "letterhead": _check_logo(workspace.letterhead, notes),
+        }
+    )
 
 
 def loads(data: bytes) -> ImportResult:

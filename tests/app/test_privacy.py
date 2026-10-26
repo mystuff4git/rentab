@@ -1,9 +1,10 @@
 """Приватность (L-10): приложение не пишет на диск и не читает профиль v0.3 само.
 
-Главный тест проходит по всем шагам так, как это сделал бы пользователь,
-и падает, если хоть один байт записан вне временного каталога системы или
-временный файл остался на диске. Временные файлы создаёт openpyxl, собирая
-смету XLSX в памяти, и сразу удаляет. Статическая проверка дополняет его:
+Главный тест проходит по всем шагам так, как это сделал бы пользователь
+(в том числе реквизиты, логотип, условия КП и скачивание КП в PDF и DOCX и
+сметы XLSX), и падает, если хоть один байт записан вне временного каталога
+системы или временный файл остался на диске. Временные файлы создаёт
+openpyxl, собирая смету XLSX в памяти, и сразу удаляет. Статическая проверка дополняет его:
 ветки кода, которые прогон не прошёл, тоже не вызывают функций записи.
 """
 
@@ -14,6 +15,7 @@ import datetime as dt
 import functools
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -32,6 +34,7 @@ from tests.app.helpers import (
     upload,
 )
 from tests.app.write_guard import record_writes
+from tests.core.factories import image_bytes
 from tests.core.test_fx import CBR, CBR_XML, FakeFetcher
 from ui import nav, state
 
@@ -64,19 +67,36 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     app.button(key="del_member_3").click().run()
     click(app, "📥 Загрузить типовой шаблон")
 
-    # Проект: смета считается сразу; проекты — новый, копия, удаление.
+    # Реквизиты и логотип для КП: загрузка, отказ для не-картинки, удаление, снова загрузка.
+    app.text_input(key=state.LETTERHEAD_KEYS["requisites"]).input("ИНН 0000000000").run()
+    logo_uploader(app).set_value(("logo.png", image_bytes(300, 100), "image/png")).run()
+    logo_uploader(app).set_value(("logo.png", b"not an image", "image/png")).run()
+    click(app, "Удалить логотип")
+    logo_uploader(app).set_value(("logo.jpg", image_bytes(200, 80, "JPEG"), "image/jpeg")).run()
+    assert app.session_state[state.LH_LOGO] is not None
+
+    # Проект: смета считается сразу; условия КП и описание этапа; проекты — новый,
+    # копия, удаление.
     app.switch_page(nav.PROJECT).run()
     ids = slot_ids(app)
     switch(app, ids[1])
+    app.text_input(key=state.OFFER_KEYS["number"]).input("КП-7")
+    app.number_input(key=state.OFFER_VALIDITY).set_value(14)
+    app.text_area(key=state.OFFER_KEYS["extra_terms"]).input("Первое\nВторое").run()
+    description = f"{state.STAGE_DESCRIPTION_PREFIX}{ids[1]}_Анализ охраноспособности"
+    app.text_input(key=description).input("Заключение о регистрируемости").run()
     click(app, "⧉ Копия")
     click(app, "➕ Новый")
     click(app, "🗑 Удалить проект")
     click(app, "Да, удалить")
 
-    # Результат: смета XLSX для кнопки «Скачать», вкладка «Чувствительность».
+    # Результат: КП (PDF, DOCX) и смета XLSX собираются по нажатию кнопок (фикстура
+    # downloads нажимает их сразу); вкладка «Чувствительность».
     app.switch_page(nav.RESULT).run()
     switch(app, ids[1])
     assert app.get("download_button")
+    built = {name.rsplit(".", 1)[-1] for name in downloads if name.startswith(("КП_", "Смета_"))}
+    assert built == {"pdf", "docx", "xlsx"}
     click(app, "Чувствительность")
     app.slider(key=state.WHATIF_HOURS).set_value(50).run()
     app.slider(key=state.TORNADO_PCT).set_value(20).run()
@@ -101,6 +121,9 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     data = exported(downloads)
     assert b'"actuals"' in data
     assert "Юрист Петрова".encode() in data
+    assert b'"letterhead"' in data
+    assert "КП-7".encode() in data
+    assert "Заключение о регистрируемости".encode() in data
     upload(app, data)
     click(app, "📂 Загрузить данные из файла")
     click(app, "Заменить данные")
@@ -109,6 +132,14 @@ def user_journey(downloads: dict[str, bytes], v03_profile: bytes) -> None:
     click(app, "Заменить данные")
     assert len(app.session_state[state.TEAM]) == 4
     assert not app.exception
+
+
+def logo_uploader(app: AppTest) -> Any:
+    """Загрузчик логотипа на шаге «Фирма» (ключ меняется после удаления логотипа)."""
+    nonce = app.session_state.to_dict().get(state.LOGO_UPLOADER_NONCE, 0)
+    key = f"{state.LOGO_UPLOADER_PREFIX}{nonce}"
+    (uploader,) = [item for item in app.file_uploader if item.key == key]
+    return uploader
 
 
 def test_app_writes_nothing_outside_tempdir(

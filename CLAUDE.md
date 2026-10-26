@@ -6,8 +6,8 @@ Open-source калькулятор стоимости и рентабельно�
 Наследник ВКР НИУ ВШЭ (Rentab v0.3, папка legacy/).
 
 ## Стек
-Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl, python-docx, PDF-генерация
-с встроенными кириллическими шрифтами; pytest + hypothesis, ruff, mypy; GitHub Actions.
+Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl (живые формулы),
+python-docx и reportlab (КП, шрифты PT встроены); pytest + hypothesis, ruff, mypy; GitHub Actions.
 
 ## Архитектура
 - `src/rentab_core/` — чистое ядро, НЕ импортирует streamlit. Вся математика здесь.
@@ -25,11 +25,21 @@ Python ≥3.11, uv, Pydantic v2, Decimal; Streamlit (UI), Plotly; openpyxl, pyth
   (на узком экране — карточки) — `ui/components.py`; подсказки KPI с формулами —
   `ui/formulas.py` (новый KPI — с подсказкой); графики — только через `ui/charts.py`
   (палитра проверена на дальтонизм).
-- `src/rentab_core/io/` — файл профиля JSON (фирма, курсы, проекты; версия схемы,
-  миграции, импорт `firm_profile.json` v0.3). Формат — `docs/profile_format.md`,
+- `src/rentab_core/io/` — файл профиля JSON (фирма, курсы, бланк для КП, проекты; версия
+  схемы, миграции, импорт `firm_profile.json` v0.3). Формат — `docs/profile_format.md`,
   JSON Schema `docs/profile.schema.json` генерируется из моделей. Изменили модели ядра —
   перегенерировать схему; старые файлы не читаются — новая версия и шаг миграции.
-  Демо-фирма — `src/rentab_core/demo.py`.
+  Демо-фирма — `src/rentab_core/demo.py`. Новое поле файла — с умолчанием и правилом
+  «пустое не пишется» (`io/files.OMIT_WHEN_EMPTY_*`), тогда версия схемы не меняется.
+- `src/rentab_core/export/` (ADR 0009, `methodology.md`, раздел 20) — документы, только
+  байты в памяти: `offer.py` — модель КП по смете (суммы до копейки, остаток копеек —
+  `allocate`), `pdf.py` (reportlab) и `docx.py` (python-docx, шрифты встроены) — её
+  оформление, `xlsx.py` — смета с живыми формулами над листом «Исходные данные»,
+  `style.py` — цвета темы, шрифты PT (`export/fonts`, OFL), `stable_zip`. Бланк фирмы и
+  условия КП — `rentab_core/documents.py` (логотип проверяет `read_logo`). Формат
+  «1 234 567 ₽» — `rentab_core/formatting.py`, подпись режима — `rentab_core/labels.py`;
+  `ui.labels` их реэкспортирует. Изменили формулу ядра — поменять и формулу Excel в
+  `xlsx.py`: `tests/core/test_xlsx_formulas.py` пересчитывает сметы в LibreOffice.
 - `src/rentab_core/analysis/` — аналитика смет: светофор этапов, KPI дашборда,
   чувствительность (запас часов, торнадо, «что если»), план–факт (`Project.actuals`),
   сравнение «модель цены × налоговый режим». Экраны — вкладка «Чувствительность»
@@ -57,7 +67,8 @@ NNE = R − C − Tax;  m = NNE / R
 ## Правила
 - Интерфейс на русском; идентификаторы на английском; докстринги на русском.
 - Деньги — Decimal в ядре, округление только при выводе. Формат: 1 234 567 ₽ —
-  только через `ui.labels` (неразрывные пробелы, минус «−»), не `f"{x:,.0f}"`.
+  только через `rentab_core.formatting` (в интерфейсе — `ui.labels`; неразрывные
+  пробелы, минус «−»), не `f"{x:,.0f}"`. В документах суммы — до копейки (`KOPECK`).
 - Никаких магических чисел: ставки в YAML, пороги и дефолты — именованные константы.
 - НИКАКОЙ записи пользовательских данных на сервер. Только импорт/экспорт файлов пользователем.
   Это проверяет `tests/app/test_privacy.py` (аудит-хук записи + AST-проверка): новый путь
@@ -70,9 +81,14 @@ NNE = R − C − Tax;  m = NNE / R
   значение): менять его значение — только явным присваиванием ключа, не удалением ключа.
   AppTest этого не ловит — проверять в браузере (`docs/screenshots/phase-6/shots.js`:
   пошлины, факт, «что если», правка ячеек редактора, вкладка «Результата», узкий
-  экран). Ключ `st.data_editor`, который зависит от проекта, меняется при смене
-  проекта. Переходы между страницами — только `st.page_link` и меню (ссылка
-  перезагрузила бы страницу и сессию).
+  экран; `docs/screenshots/phase-7/shots.js`: реквизиты, логотип, условия КП,
+  скачивание документов). Ключ `st.data_editor`, который зависит от проекта,
+  меняется при смене проекта. Ключ поля, привязанного к элементу списка (описание
+  этапа), — по проекту и имени, не по номеру. Переходы между страницами — только
+  `st.page_link` и меню (ссылка перезагрузила бы страницу и сессию). Документы для
+  скачивания — `st.download_button(data=функция, on_click="ignore")`: файл собирается
+  по нажатию, фикстура `downloads` в тестах собирает его сразу. Загрузчик, чей файл
+  надо «забыть» (логотип), получает новый ключ.
   Дельты `st.metric` — с ASCII-минусом: по нему Streamlit выбирает стрелку и цвет.
 - Перед PR: ruff, mypy, pytest зелёные; для UI — скриншоты через Playwright.
 - Одна фаза = одна ветка = один PR. Фазы описаны в docs/ROADMAP.md.
@@ -90,6 +106,7 @@ uv run python -m tests.characterization.bridge  # перегенерироват
 uv run python -m rentab_core.rates.verification docs/rates_verification.md  # после правки YAML
 uv run python -m rentab_core.io docs/profile.schema.json  # после изменения моделей ядра
 uv run streamlit run app/Home.py # приложение (конфиг — .streamlit/config.toml в корне)
+uv run python -m tests.export_examples docs/examples --png  # примеры КП и сметы (PNG — pdftoppm)
 ```
 
 ## legacy/ и characterization-тесты
@@ -111,7 +128,9 @@ uv run streamlit run app/Home.py # приложение (конфиг — .strea
   - Изменили формулу — обновить снимки ядра (`--update-snapshots`), перегенерировать
     мост и объяснить diff в PR.
 - Тесты ядра — `tests/core/` (golden: примеры `methodology.md` и слайд 3; случайные
-  сценарии для property-тестов — `tests/core/strategies.py`), smoke-тесты
+  сценарии для property-тестов — `tests/core/strategies.py`; формулы XLSX —
+  пересчётом в LibreOffice, без `soffice` модуль пропускается, в CI обязателен через
+  `RENTAB_REQUIRE_LIBREOFFICE=1`; документы — `pypdf` и `python-docx`), smoke-тесты
   интерфейса — `tests/app/` (`streamlit.testing`, запуск с `Home.py` и
   `switch_page("views/…")`; HTML-таблицы — `helpers.table`, смета — `estimate_of`).
 - Архитектурные решения — `docs/adr/`.
